@@ -105,3 +105,52 @@ class IMG3:
             i += tag['totalLength']
 
         return img3_data
+
+    def readTagInfo(self, tag):
+        tagMagic_str = tag['magic'].to_bytes(4, 'little').decode()[::-1]
+
+        print(f'Tag: {tagMagic_str}')
+        print(f'Total length: {tag["totalLength"]}')
+        print(f'Data length: {tag["dataLength"]}')
+        print(f'Pad length: {len(tag["pad"])}')
+
+        if tagMagic_str == 'TYPE':
+            tagTypeStr = tag['data'].decode()[::-1]
+
+            print(tagTypeStr)
+
+        elif tagMagic_str == 'DATA':
+            pass
+
+        elif tagMagic_str == 'VERS':
+            # FIXME I'm not sure if the 0F 00 00 00 is right.
+            tagVers_str = tag['data'].decode()
+
+            print(tagVers_str)
+
+        elif tagMagic_str == 'SEPO':
+            tagSepo_int = int.from_bytes(tag['data'], 'little')
+
+            print(tagSepo_int)
+
+        elif tagMagic_str == 'CHIP':
+            tagChip_int = int.from_bytes(tag['data'], 'little')
+
+            print(tagChip_int)
+
+        elif tagMagic_str == 'BORD':
+            tagBord_int = int.from_bytes(tag['data'], 'little')
+
+            print(tagBord_int)
+
+        elif tagMagic_str == 'KBAG':
+            pass
+
+        elif tagMagic_str == 'SHSH':
+            pass
+
+        elif tagMagic_str == 'CERT':
+            pass
+
+        else:
+            pass

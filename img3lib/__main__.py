@@ -27,11 +27,7 @@ def main():
         print(f'Ident: {ident_str}')
 
         for tag in img3_data['tags']:
-            tagMagic_str = tag['magic'].to_bytes(4, 'little').decode()[::-1]
-
-            print(f'Tag: {tagMagic_str}')
-            print(f'TotalLength: {tag["totalLength"]}')
-            print(f'DataLength: {tag["dataLength"]}')
+            img3file.readTagInfo(tag)
 
     else:
         parser.print_help()

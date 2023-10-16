@@ -1,6 +1,8 @@
 
 import struct
 
+from .utils import aes_decrypt
+
 '''
 VERS: iBoot version of the image
 SEPO: Security Epoch
@@ -30,6 +32,8 @@ class IMG3:
     def __init__(self, data) -> None:
         self.data = data
         self.dataLen = len(self.data)
+
+        self.tags = self.readImg3()['tags']
 
     def readTag(self, i):
         '''
@@ -154,3 +158,33 @@ class IMG3:
 
         else:
             pass
+
+    def decrypt(self, iv, key):
+        iv_len = len(iv)
+        key_len = len(key)
+
+        if iv_len != 32 or key_len != 64:
+            pass
+
+        kbag = None
+
+        data = None
+
+        for tag in self.tags:
+            tagMagic_str = tag['magic'].to_bytes(4, 'little').decode()[::-1]
+
+            if tagMagic_str == 'KBAG':
+                kbag_type, aes_type = struct.unpack('<2I', tag['data'][:8])
+
+                if kbag_type == 1:
+                    kbag = tag['data'][8:8+48]
+
+            elif tagMagic_str == 'DATA':
+                data = tag['data']
+
+        if not kbag or not data:
+            pass
+
+        data_decrypted = aes_decrypt(data, iv, key)
+
+        return data_decrypted

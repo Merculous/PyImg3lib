@@ -7,6 +7,8 @@ def main():
     parser = ArgumentParser()
 
     parser.add_argument('-i', nargs=1)
+    parser.add_argument('-iv', nargs=1)
+    parser.add_argument('-key', nargs=1)
 
     args = parser.parse_args()
 
@@ -15,19 +17,12 @@ def main():
             data = f.read()
 
         img3file = IMG3(data)
-        img3_data = img3file.readImg3()
 
-        magic_str = img3_data['magic'].to_bytes(4, 'little').decode()[::-1]
-        ident_str = img3_data['ident'].to_bytes(4, 'little').decode()[::-1]
+        if args.iv and args.key:
+            data_decrypted = img3file.decrypt(args.iv[0], args.key[0])
 
-        print(f'Img3 magic: {magic_str}')
-        print(f'Fullsize: {img3_data["fullSize"]}')
-        print(f'SizeNoPack: {img3_data["sizeNoPack"]}')
-        print(f'SigCheckArea: {img3_data["sigCheckArea"]}')
-        print(f'Ident: {ident_str}')
-
-        for tag in img3_data['tags']:
-            img3file.readTagInfo(tag)
+            with open('decryptTest.bin', 'wb') as f:
+                f.write(data_decrypted)
 
     else:
         parser.print_help()

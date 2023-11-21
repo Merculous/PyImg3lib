@@ -1,6 +1,8 @@
 
 import struct
 
+import lzss
+
 from .utils import aes_decrypt
 
 '''
@@ -18,8 +20,8 @@ TYPE: Type of image, should contain the same string as the header's ident
 DATA: Real content of the file
 NONC: Nonce used when file was signed.
 CEPO: Chip epoch
-OVRD: 
-RAND: 
+OVRD:
+RAND:
 SALT:
 '''
 
@@ -28,10 +30,14 @@ Decryption is done using the modulus at cert + 0xA15
 0xC to SHSH is SHAed
 '''
 
+
 class IMG3:
-    def __init__(self, data) -> None:
+    def __init__(self, data, iv=None, key=None) -> None:
         self.data = data
         self.dataLen = len(self.data)
+
+        self.iv = iv
+        self.key = key
 
         self.tags = self.readImg3()['tags']
 
@@ -46,7 +52,8 @@ class IMG3:
         };
         '''
 
-        magic, totalLength, dataLength = struct.unpack('<3I', self.data[i:i+12])
+        magic, totalLength, dataLength = struct.unpack(
+            '<3I', self.data[i:i+12])
 
         i += 12
 
@@ -61,7 +68,7 @@ class IMG3:
         i += padSize
 
         tag = {
-            'magic': magic,
+            'magic': magic.to_bytes(4, 'little'),
             'totalLength': totalLength,
             'dataLength': dataLength,
             'data': tag_data,
@@ -69,7 +76,7 @@ class IMG3:
         }
 
         return tag
-    
+
     def readImg3(self):
         '''
         typedef struct img3File {
@@ -88,7 +95,8 @@ class IMG3:
 
         headSize = 20
 
-        magic, fullSize, sizeNoPack, sigCheckArea, ident = struct.unpack('<5I', self.data[:headSize])
+        magic, fullSize, sizeNoPack, sigCheckArea, ident = struct.unpack(
+            '<5I', self.data[:headSize])
 
         img3_data = {
             'magic': magic,
@@ -171,15 +179,15 @@ class IMG3:
         data = None
 
         for tag in self.tags:
-            tagMagic_str = tag['magic'].to_bytes(4, 'little').decode()[::-1]
+            tagMagic_str = tag['magic'][::-1]
 
-            if tagMagic_str == 'KBAG':
+            if tagMagic_str == b'KBAG':
                 kbag_type, aes_type = struct.unpack('<2I', tag['data'][:8])
 
                 if kbag_type == 1:
                     kbag = tag['data'][8:8+48]
 
-            elif tagMagic_str == 'DATA':
+            elif tagMagic_str == b'DATA':
                 data = tag['data']
 
         if not kbag or not data:
@@ -188,3 +196,56 @@ class IMG3:
         data_decrypted = aes_decrypt(data, iv, key)
 
         return data_decrypted
+
+    def decryptKernel(self):
+        # signature 4
+        # compression type 4
+        # checksum 4
+        # decompressed_len 4
+        # compressed_len 4
+        # padding[0x16c]
+
+        for tag in self.tags:
+            if tag['magic'][::-1] == b'DATA':
+                break
+
+        data = tag['data']
+
+        dataLen = tag['dataLength']
+
+        lenOfDataToDecrypt = dataLen & ~0xF
+
+        lastBlockSize = dataLen - lenOfDataToDecrypt
+
+        dataToDecrypt = data[:lenOfDataToDecrypt]
+
+        lastBlockData = data[-lastBlockSize:]
+
+        decrypted_data = aes_decrypt(dataToDecrypt, self.iv, self.key)
+
+        return (decrypted_data, lastBlockData)
+
+    def decompressKernel(self, data):
+        headsize = 20
+
+        (
+            signature,
+            compression_type,
+            checksum,
+            decompressed_len,
+            compressed_len
+        ) = struct.unpack('<5I', data[0][:headsize])
+
+        signature = signature.to_bytes(4, 'little')
+        compression_type = compression_type.to_bytes(4, 'little')
+
+        if signature != b'comp' or compression_type != b'lzss':
+            raise Exception('Kernel DATA header is bad!')
+
+        dataAfterPadding = data[0][0x180:]
+
+        dataToDecompress = dataAfterPadding + data[1]
+
+        decompressedData = lzss.decompress(dataToDecompress)
+
+        return decompressedData

@@ -1,5 +1,7 @@
 
 from subprocess import Popen, PIPE, STDOUT
+from zlib import adler32
+
 
 def aes_decrypt(data, iv, key):
     args = (
@@ -19,3 +21,7 @@ def aes_decrypt(data, iv, key):
     cmd_stdout = cmd.communicate(data)[0]
 
     return cmd_stdout
+
+
+def getKernelChecksum(data):
+    return adler32(data)

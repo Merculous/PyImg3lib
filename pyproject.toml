@@ -6,8 +6,9 @@ authors = ["Merculous <24739823+Merculous@users.noreply.github.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "<3.10"
-lzss = "^0.3"
+python = ">3.5"
+pylzss = "^0.3.2"
+pycryptodome = "^3.19.0"
 
 
 [build-system]

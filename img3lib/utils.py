@@ -1,26 +1,11 @@
 
-from subprocess import Popen, PIPE, STDOUT
 from zlib import adler32
+
+from Crypto.Cipher import AES
 
 
 def aes_decrypt(data, iv, key):
-    args = (
-        'openssl',
-        'enc',
-        '-aes-256-cbc',
-        '-d',
-        '-nopad',
-        '-iv',
-        iv,
-        '-K',
-        key
-    )
-
-    cmd = Popen(args, stdout=PIPE, stdin=PIPE, stderr=STDOUT)
-
-    cmd_stdout = cmd.communicate(data)[0]
-
-    return cmd_stdout
+    return AES.new(key, AES.MODE_CBC, iv).decrypt(data)
 
 
 def getKernelChecksum(data):

@@ -1,14 +1,16 @@
 [tool.poetry]
 name = "pyimg3lib"
 version = "0.1.0"
-description = ""
+description = "iOS Image3 lib"
 authors = ["Merculous <24739823+Merculous@users.noreply.github.com>"]
 readme = "README.md"
+packages = [{include = "img3lib"}]
 
 [tool.poetry.dependencies]
-python = ">3.5"
+python = "^3.11"
 pylzss = "^0.3.4"
 pycryptodome = "^3.19.0"
+
 
 [build-system]
 requires = ["poetry-core"]

@@ -1,4 +1,5 @@
 
+import binascii
 import struct
 
 import lzss
@@ -31,15 +32,9 @@ Decryption is done using the modulus at cert + 0xA15
 '''
 
 
-class IMG3:
-    def __init__(self, data, iv=None, key=None) -> None:
-        self.data = data
-        self.dataLen = len(self.data)
-
-        self.iv = iv
-        self.key = key
-
-        self.tags = self.readImg3()['tags']
+class Tag:
+    def __init__(self):
+        pass
 
     def readTag(self, i):
         '''
@@ -77,6 +72,46 @@ class IMG3:
 
         return tag
 
+    def parseKBAG(self, tag):
+        data = tag['data']
+
+        info = {
+            'dev': False,
+            'aes': None,
+            'iv': None,
+            'key': None
+        }
+
+        i = 0
+
+        cryptState, aesType = struct.unpack('<2I', data[i:8])
+
+        if cryptState == 2:
+            info['dev'] = True
+
+        info['aes'] = aesType
+
+        i += 8
+
+        if info['aes'] == 256:
+            iv, key = struct.unpack('<16s32s', data[i:len(data)])
+        else:
+            pass
+
+        info['iv'] = binascii.hexlify(iv).decode()
+        info['key'] = binascii.hexlify(key).decode()
+
+        return info
+
+
+class IMG3(Tag):
+    def __init__(self, data):
+        super().__init__()
+
+        self.data = data
+        self.info = self.readImg3()
+        self.tags = self.info['tags']
+
     def readImg3(self):
         '''
         typedef struct img3File {
@@ -99,17 +134,17 @@ class IMG3:
             '<5I', self.data[:headSize])
 
         img3_data = {
-            'magic': magic,
+            'magic': magic.to_bytes(4, 'little'),
             'fullSize': fullSize,
             'sizeNoPack': sizeNoPack,
             'sigCheckArea': sigCheckArea,
-            'ident': ident,
+            'ident': ident.to_bytes(4, 'little'),
             'tags': []
         }
 
         i = headSize
 
-        while i != self.dataLen:
+        while i != len(self.data):
             tag = self.readTag(i)
 
             img3_data['tags'].append(tag)
@@ -117,55 +152,6 @@ class IMG3:
             i += tag['totalLength']
 
         return img3_data
-
-    def readTagInfo(self, tag):
-        tagMagic_str = tag['magic'].to_bytes(4, 'little').decode()[::-1]
-
-        print(f'Tag: {tagMagic_str}')
-        print(f'Total length: {tag["totalLength"]}')
-        print(f'Data length: {tag["dataLength"]}')
-        print(f'Pad length: {len(tag["pad"])}')
-
-        if tagMagic_str == 'TYPE':
-            tagTypeStr = tag['data'].decode()[::-1]
-
-            print(tagTypeStr)
-
-        elif tagMagic_str == 'DATA':
-            pass
-
-        elif tagMagic_str == 'VERS':
-            # FIXME I'm not sure if the 0F 00 00 00 is right.
-            tagVers_str = tag['data'].decode()
-
-            print(tagVers_str)
-
-        elif tagMagic_str == 'SEPO':
-            tagSepo_int = int.from_bytes(tag['data'], 'little')
-
-            print(tagSepo_int)
-
-        elif tagMagic_str == 'CHIP':
-            tagChip_int = int.from_bytes(tag['data'], 'little')
-
-            print(tagChip_int)
-
-        elif tagMagic_str == 'BORD':
-            tagBord_int = int.from_bytes(tag['data'], 'little')
-
-            print(tagBord_int)
-
-        elif tagMagic_str == 'KBAG':
-            pass
-
-        elif tagMagic_str == 'SHSH':
-            pass
-
-        elif tagMagic_str == 'CERT':
-            pass
-
-        else:
-            pass
 
     def decrypt(self, iv, key):
         iv_len = len(iv)
@@ -198,13 +184,6 @@ class IMG3:
         return data_decrypted
 
     def decryptKernel(self):
-        # signature 4
-        # compression type 4
-        # checksum 4
-        # decompressed_len 4
-        # compressed_len 4
-        # padding[0x16c]
-
         for tag in self.tags:
             if tag['magic'][::-1] == b'DATA':
                 break
@@ -249,3 +228,65 @@ class IMG3:
         decompressedData = lzss.decompress(dataToDecompress)
 
         return decompressedData
+
+    def printAllImg3Info(self):
+        img3_type = self.info['ident'][::-1].decode()
+
+        print(f'Image3 type: {img3_type}')
+        print(f'Full size: {self.info["fullSize"]}')
+        print(f'Unpacked size: {self.info["sizeNoPack"]}')
+
+        print('\n')
+
+        for tag in self.tags:
+            tag_magic = tag['magic'][::-1].decode()
+
+            print(f'Magic: {tag_magic}')
+            print(f'Tag length: {tag["totalLength"]}')
+            print(f'Data length: {tag["dataLength"]}')
+
+            if tag_magic == 'TYPE':
+                tag_type = tag['data'][::-1].decode()
+
+                print(f'Tag type: {tag_type}')
+
+            if tag_magic == 'SEPO':
+                epoch = struct.unpack('<I', tag['data'])[0]
+
+                print(f'Epoch: {epoch}')
+
+            if tag_magic == 'KBAG':
+                kbag_info = self.parseKBAG(tag)
+
+                kbag_type = None
+
+                if kbag_info['dev'] is False:
+                    kbag_type = 'prod'
+
+                elif kbag_info['dev'] is True:
+                    kbag_type = 'dev'
+
+                else:
+                    pass
+
+                print(f'KBAG type: {kbag_type}')
+                print(f'AES: {kbag_info["aes"]}')
+                print(f'IV: {kbag_info["iv"]}')
+                print(f'Key: {kbag_info["key"]}')
+
+            if tag_magic == 'VERS':
+                vers_len = struct.unpack('<I', tag['data'][:4])[0]
+
+                vers = struct.unpack(f'<{vers_len}s', tag['data'][-vers_len:])[0]
+
+                vers = vers.decode()
+
+                print(f'Version length: {vers_len}')
+                print(f'iBoot version: {vers}')
+
+            if tag_magic == 'BORD':
+                board = struct.unpack('<I', tag['data'])[0]
+
+                print(f'Board: {board}')
+
+            print('\n')

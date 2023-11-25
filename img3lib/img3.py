@@ -202,21 +202,23 @@ class IMG3(Tag):
 
         dataLen = data_tag['dataLength']
 
-        lenOfDataToDecrypt = dataLen & ~0xF
-
-        lastBlockSize = dataLen - lenOfDataToDecrypt
-
-        dataToDecrypt = data[:lenOfDataToDecrypt]
-
-        lastBlockData = data[-lastBlockSize:]
-
-        decrypted_data = aes_decrypt(dataToDecrypt, iv, key)
-
         tag_type = type_tag['data'][::-1].decode()
 
-        final_data = (decrypted_data, lastBlockData)
+        final_data = None
 
         if tag_type == 'krnl':
+            lenOfDataToDecrypt = dataLen & ~0xF
+
+            lastBlockSize = dataLen - lenOfDataToDecrypt
+
+            dataToDecrypt = data[:lenOfDataToDecrypt]
+
+            lastBlockData = data[-lastBlockSize:]
+
+            decrypted_data = aes_decrypt(dataToDecrypt, iv, key)
+
+            final_data = (decrypted_data, lastBlockData)
+
             # TODO
             # Allow user to disable decompression
 
@@ -224,7 +226,7 @@ class IMG3(Tag):
             final_data = self.decompressKernel(final_data)
 
         else:
-            final_data = decrypted_data + lastBlockData
+            final_data = aes_decrypt(data, iv, key)
 
         return final_data
 

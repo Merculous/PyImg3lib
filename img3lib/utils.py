@@ -15,7 +15,22 @@ def writeBinaryFile(path, data):
 
 
 def aes_decrypt(data, iv, key):
-    return AES.new(key, AES.MODE_CBC, iv).decrypt(data)
+    iv_len = len(iv)
+    key_len = len(key)
+
+    if iv_len == 32:
+        # AES 256
+        iv = iv[:16]
+
+    if key_len == 64:
+        # AES 256
+        key = key[32:]
+
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+
+    decrypted_data = cipher.decrypt(data)
+
+    return decrypted_data
 
 
 def getKernelChecksum(data):

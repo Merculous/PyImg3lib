@@ -153,56 +153,12 @@ class IMG3(Tag):
 
         return img3_data
 
-    def decrypt(self, iv, key):
-        iv_len = len(iv)
-        key_len = len(key)
-
-        if iv_len != 32 or key_len != 64:
-            pass
-
-        kbag = None
-
-        data = None
-
+    def getTagType(self, tag_type):
         for tag in self.tags:
-            tagMagic_str = tag['magic'][::-1]
+            tag_magic = tag['magic'][::-1].decode()
 
-            if tagMagic_str == b'KBAG':
-                kbag_type, aes_type = struct.unpack('<2I', tag['data'][:8])
-
-                if kbag_type == 1:
-                    kbag = tag['data'][8:8+48]
-
-            elif tagMagic_str == b'DATA':
-                data = tag['data']
-
-        if not kbag or not data:
-            pass
-
-        data_decrypted = aes_decrypt(data, iv, key)
-
-        return data_decrypted
-
-    def decryptKernel(self):
-        for tag in self.tags:
-            if tag['magic'][::-1] == b'DATA':
-                break
-
-        data = tag['data']
-
-        dataLen = tag['dataLength']
-
-        lenOfDataToDecrypt = dataLen & ~0xF
-
-        lastBlockSize = dataLen - lenOfDataToDecrypt
-
-        dataToDecrypt = data[:lenOfDataToDecrypt]
-
-        lastBlockData = data[-lastBlockSize:]
-
-        decrypted_data = aes_decrypt(dataToDecrypt, self.iv, self.key)
-
-        return (decrypted_data, lastBlockData)
+            if tag_type == tag_magic:
+                return tag
 
     def decompressKernel(self, data):
         headsize = 20
@@ -228,6 +184,49 @@ class IMG3(Tag):
         decompressedData = lzss.decompress(dataToDecompress)
 
         return decompressedData
+
+    def decrypt(self, iv, key):
+        iv = bytes.fromhex(iv)
+        key = bytes.fromhex(key)
+
+        type_tag = self.getTagType('TYPE')
+        data_tag = self.getTagType('DATA')
+
+        # TODO
+        # Check AES in KBAG
+
+        # kbag_tag = self.getTagType('KBAG')
+        # kbag_info = self.parseKBAG(kbag_tag)
+
+        data = data_tag['data']
+
+        dataLen = data_tag['dataLength']
+
+        lenOfDataToDecrypt = dataLen & ~0xF
+
+        lastBlockSize = dataLen - lenOfDataToDecrypt
+
+        dataToDecrypt = data[:lenOfDataToDecrypt]
+
+        lastBlockData = data[-lastBlockSize:]
+
+        decrypted_data = aes_decrypt(dataToDecrypt, iv, key)
+
+        tag_type = type_tag['data'][::-1].decode()
+
+        final_data = (decrypted_data, lastBlockData)
+
+        if tag_type == 'krnl':
+            # TODO
+            # Allow user to disable decompression
+
+            # This will return bytes instead
+            final_data = self.decompressKernel(final_data)
+
+        else:
+            final_data = decrypted_data + lastBlockData
+
+        return final_data
 
     def printAllImg3Info(self):
         img3_type = self.info['ident'][::-1].decode()
@@ -277,7 +276,8 @@ class IMG3(Tag):
             if tag_magic == 'VERS':
                 vers_len = struct.unpack('<I', tag['data'][:4])[0]
 
-                vers = struct.unpack(f'<{vers_len}s', tag['data'][-vers_len:])[0]
+                vers = struct.unpack(
+                    f'<{vers_len}s', tag['data'][-vers_len:])[0]
 
                 vers = vers.decode()
 

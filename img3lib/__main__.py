@@ -11,7 +11,10 @@ def main():
     parser.add_argument('-i', nargs=1)
     parser.add_argument('-o', nargs=1)
 
+    parser.add_argument('--data', nargs=1)
+
     parser.add_argument('-a', action='store_true')
+    parser.add_argument('-c', action='store_true')
     parser.add_argument('-d', action='store_true')
 
     parser.add_argument('-iv', nargs=1)
@@ -20,9 +23,20 @@ def main():
     args = parser.parse_args()
 
     if args.i:
-        data = readBinaryFile(args.i[0])
+        if args.data and args.o:
+            orig = readBinaryFile(args.i[0])
+            data = readBinaryFile(args.data[0])
 
-        img3file = IMG3(data)
+            origImg3 = IMG3(orig)
+
+            newImg3 = origImg3.replaceData(data)
+
+            writeBinaryFile(args.o[0], newImg3)
+
+        else:
+            data = readBinaryFile(args.i[0])
+
+            img3file = IMG3(data)
 
         if args.a:
             img3file.printAllImg3Info()

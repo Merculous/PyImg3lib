@@ -4,7 +4,7 @@ import struct
 
 import lzss
 
-from .utils import aes_decrypt
+from .utils import aes_decrypt, getKernelChecksum
 
 '''
 VERS: iBoot version of the image
@@ -103,6 +103,44 @@ class Tag:
 
         return info
 
+    def makeTag(self, magic, data):
+        valid_magic = (
+            'TYPE',
+            'DATA',
+            'VERS',
+            'SEPO',
+            'BORD',
+            'KBAG',
+            'SHSH',
+            'CERT'
+        )
+
+        if magic not in valid_magic:
+            raise Exception(f'Unknown magic: {magic}')
+
+        magicFormatted = bytes(magic, 'utf-8')[::-1]
+
+        headsize = 12
+
+        dataLength = len(data)
+
+        totalLength = dataLength + headsize
+
+        paddingLength = totalLength - dataLength - headsize
+
+        # TODO Idk if this is good to do atm
+        padding = [0] * paddingLength if paddingLength != 0 else None
+
+        tag = {
+            'magic': magicFormatted,
+            'totalLength': totalLength,
+            'dataLength': dataLength,
+            'data': data,
+            'pad': padding
+        }
+
+        return tag
+
 
 class IMG3(Tag):
     def __init__(self, data):
@@ -111,6 +149,8 @@ class IMG3(Tag):
         self.data = data
         self.info = self.readImg3()
         self.tags = self.info['tags']
+
+        self.newData = None
 
     def readImg3(self):
         '''
@@ -292,3 +332,92 @@ class IMG3(Tag):
                 print(f'Board: {board}')
 
             print('\n')
+
+    def compressKernel(self, data):
+        compressed = lzss.compress(data)
+
+        padding_len = 0x180 - 0x14
+
+        padding = [0] * padding_len
+
+        output = (
+            b'comp',
+            b'lzss',
+            getKernelChecksum(compressed),
+            len(data),
+            len(compressed)
+        )
+
+        output_packed = struct.pack('<4s4s3I', *output)
+        padding_packed = struct.pack(f'{padding_len}B', *padding)
+
+        final = output_packed + padding_packed + compressed
+
+        return final
+
+    def getTagOffset(self, magic):
+        self.length = len(self.data)
+
+        i = 20
+
+        for tag in self.tags:
+            if magic != tag['magic']:
+                i += tag['totalLength']
+            else:
+                return i
+
+    def writeTag(self, tag):
+        tag_offset = self.getTagOffset(tag['magic'])
+
+        tag_head = (
+            tag['magic'],
+            tag['totalLength'],
+            tag['dataLength']
+        )
+
+        packed = None
+
+        if tag['pad'] is None:
+            packed = struct.pack(
+                f'<4s2I{tag["dataLength"]}B', *tag_head, *tag['data'])
+        else:
+            pass
+
+        first = self.data[:tag_offset]
+
+        second = packed
+
+        third = self.data[tag_offset+len(second):]
+
+        self.newData = first + second + third
+
+    def replaceData(self, data):
+        tmp = struct.unpack('<I', data[:4])[0]
+
+        magic = tmp.to_bytes(4, 'little')[::-1]
+
+        feedface = b'\xfe\xed\xfa\xce'
+
+        if magic == feedface:
+            data = self.compressKernel(data)
+
+        newDataTag = self.makeTag('DATA', data)
+
+        self.writeTag(newDataTag)
+
+        return self.newData
+
+    def makeImage(self):
+        '''
+        TYPE
+        DATA
+        VERS (iBoot)
+        SEPO
+        BORD (iBoot)
+        KBAG (prod)
+        KBAG (dev)
+        SHSH
+        CERT
+        '''
+
+        pass

@@ -1,10 +1,11 @@
 [tool.poetry]
 name = "pyimg3lib"
-version = "0.1.0"
+version = "1.0.1"
 description = "iOS Image3 lib"
 authors = ["Merculous <24739823+Merculous@users.noreply.github.com>"]
 readme = "README.md"
 packages = [{include = "img3lib"}]
+repository = "https://github.com/Merculous/PyImg3lib"
 
 [tool.poetry.dependencies]
 python = "^3.11"

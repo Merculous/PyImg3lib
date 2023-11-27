@@ -14,7 +14,10 @@ def writeBinaryFile(path, data):
         f.write(data)
 
 
-def aes_decrypt(data, iv, key):
+def aes(mode, data, iv, key):
+    iv = bytes.fromhex(iv)
+    key = bytes.fromhex(key)
+
     iv_len = len(iv)
     key_len = len(key)
 
@@ -28,9 +31,16 @@ def aes_decrypt(data, iv, key):
 
     cipher = AES.new(key, AES.MODE_CBC, iv)
 
-    decrypted_data = cipher.decrypt(data)
+    if mode == 'encrypt':
+        data = cipher.encrypt(data)
 
-    return decrypted_data
+    elif mode == 'decrypt':
+        data = cipher.decrypt(data)
+
+    else:
+        raise Exception(f'Unknown mode: {mode}')
+
+    return data
 
 
 def getKernelChecksum(data):

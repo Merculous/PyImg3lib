@@ -4,7 +4,7 @@ import struct
 
 import lzss
 
-from .utils import aes_decrypt, getKernelChecksum
+from .utils import aes, getKernelChecksum
 
 '''
 VERS: iBoot version of the image
@@ -143,10 +143,13 @@ class Tag:
 
 
 class IMG3(Tag):
-    def __init__(self, data):
+    def __init__(self, data, iv=None, key=None):
         super().__init__()
 
         self.data = data
+        self.iv = iv
+        self.key = key
+
         self.info = self.readImg3()
         self.tags = self.info['tags']
 
@@ -163,7 +166,7 @@ class IMG3(Tag):
                                 // the start of the RSA signature (SHSH section)
             uint32_t ident;       // identifier of image, used when bootrom is parsing images
                                 // list to find LLB (illb), LLB parsing it to find iBoot (ibot),
-                                // etc. 
+                                // etc.
             img3Tag  tags[];      // continues until end of file
         };
         '''
@@ -225,9 +228,12 @@ class IMG3(Tag):
 
         return decompressedData
 
-    def decrypt(self, iv, key):
-        iv = bytes.fromhex(iv)
-        key = bytes.fromhex(key)
+    def decrypt(self):
+        if self.iv is None:
+            raise Exception('iv is not set!')
+
+        if self.key is None:
+            raise Exception('key is not set!')
 
         type_tag = self.getTagType('TYPE')
         data_tag = self.getTagType('DATA')
@@ -255,7 +261,7 @@ class IMG3(Tag):
 
             lastBlockData = data[-lastBlockSize:]
 
-            decrypted_data = aes_decrypt(dataToDecrypt, iv, key)
+            decrypted_data = aes('decrypt', dataToDecrypt, self.iv, self.key)
 
             final_data = (decrypted_data, lastBlockData)
 
@@ -266,7 +272,7 @@ class IMG3(Tag):
             final_data = self.decompressKernel(final_data)
 
         else:
-            final_data = aes_decrypt(data, iv, key)
+            final_data = aes('decrypt', data, self.iv, self.key)
 
         return final_data
 
@@ -392,14 +398,36 @@ class IMG3(Tag):
         self.newData = first + second + third
 
     def replaceData(self, data):
-        tmp = struct.unpack('<I', data[:4])[0]
+        magic = struct.unpack('<I', data[:4])[0]
 
-        magic = tmp.to_bytes(4, 'little')[::-1]
+        magic = magic.to_bytes(4, 'little')[::-1]
 
         feedface = b'\xfe\xed\xfa\xce'
 
         if magic == feedface:
             data = self.compressKernel(data)
+
+            # 3.0 / 3.0.1 have the last block
+            # of DATA unencrypted
+
+            if self.iv and self.key:
+                data_len = len(data)
+
+                toEncrypt = len(data) & ~0xF
+
+                lastBlock = data_len - toEncrypt
+
+                first = data[:toEncrypt]
+
+                second = data[-lastBlock:]
+
+                third = aes('encrypt', first, self.iv, self.key)
+
+                data = third + second
+
+        else:
+            if self.iv and self.key:
+                data = aes('encrypt', data, self.iv, self.key)
 
         newDataTag = self.makeTag('DATA', data)
 

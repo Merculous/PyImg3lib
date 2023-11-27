@@ -23,26 +23,28 @@ def main():
     args = parser.parse_args()
 
     if args.i:
+        in_data = readBinaryFile(args.i[0])
+
+        img3file = IMG3(in_data)
+
+        if args.iv:
+            img3file.iv = args.iv[0]
+
+        if args.key:
+            img3file.key = args.key[0]
+
         if args.data and args.o:
-            orig = readBinaryFile(args.i[0])
-            data = readBinaryFile(args.data[0])
+            raw_data = readBinaryFile(args.data[0])
 
-            origImg3 = IMG3(orig)
-
-            newImg3 = origImg3.replaceData(data)
+            newImg3 = img3file.replaceData(raw_data)
 
             writeBinaryFile(args.o[0], newImg3)
-
-        else:
-            data = readBinaryFile(args.i[0])
-
-            img3file = IMG3(data)
 
         if args.a:
             img3file.printAllImg3Info()
 
         elif args.d and args.o:
-            decrypted_data = img3file.decrypt(args.iv[0], args.key[0])
+            decrypted_data = img3file.decrypt()
 
             writeBinaryFile(args.o[0], decrypted_data)
 

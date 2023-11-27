@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pyimg3lib"
-version = "1.0.1"
+version = "1.0.2"
 description = "iOS Image3 lib"
 authors = ["Merculous <24739823+Merculous@users.noreply.github.com>"]
 readme = "README.md"

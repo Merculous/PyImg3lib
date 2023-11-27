@@ -14,20 +14,33 @@ def writeBinaryFile(path, data):
         f.write(data)
 
 
-def aes(mode, data, iv, key):
+def aes(mode, aes_type, data, iv, key):
     iv = bytes.fromhex(iv)
     key = bytes.fromhex(key)
 
     iv_len = len(iv)
     key_len = len(key)
 
-    if iv_len == 32:
-        # AES 256
-        iv = iv[:16]
+    if iv_len != 16:
+        raise Exception(f'Bad iv length: {iv_len}')
 
-    if key_len == 64:
-        # AES 256
-        key = key[32:]
+    if key_len < 16:
+        raise Exception(f'Bag key length: {key_len}')
+
+    if aes_type == 128:
+        if key_len > 16:
+            key = key[16:]
+
+    elif aes_type == 192:
+        if key_len > 24:
+            key = key[24:]
+
+    elif aes_type == 256:
+        if key_len > 32:
+            key = key[32:]
+
+    else:
+        raise Exception(f'Unknown AES type: {aes_type}')
 
     cipher = AES.new(key, AES.MODE_CBC, iv)
 

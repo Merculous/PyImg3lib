@@ -238,11 +238,8 @@ class IMG3(Tag):
         type_tag = self.getTagType('TYPE')
         data_tag = self.getTagType('DATA')
 
-        # TODO
-        # Check AES in KBAG
-
-        # kbag_tag = self.getTagType('KBAG')
-        # kbag_info = self.parseKBAG(kbag_tag)
+        kbag_tag = self.getTagType('KBAG')
+        kbag_info = self.parseKBAG(kbag_tag)
 
         data = data_tag['data']
 
@@ -252,7 +249,9 @@ class IMG3(Tag):
 
         final_data = None
 
-        if tag_type == 'krnl':
+        edge_cases = ('krnl', 'logo', 'recm')
+
+        if tag_type in edge_cases:
             lenOfDataToDecrypt = dataLen & ~0xF
 
             lastBlockSize = dataLen - lenOfDataToDecrypt
@@ -261,18 +260,24 @@ class IMG3(Tag):
 
             lastBlockData = data[-lastBlockSize:]
 
-            decrypted_data = aes('decrypt', dataToDecrypt, self.iv, self.key)
+            decrypted_data = aes(
+                'decrypt', kbag_info['aes'], dataToDecrypt, self.iv, self.key)
 
             final_data = (decrypted_data, lastBlockData)
 
             # TODO
             # Allow user to disable decompression
 
-            # This will return bytes instead
-            final_data = self.decompressKernel(final_data)
+            if tag_type == 'krnl':
+                # This will return bytes instead
+                final_data = self.decompressKernel(final_data)
+
+            else:
+                final_data = decrypted_data + lastBlockData
 
         else:
-            final_data = aes('decrypt', data, self.iv, self.key)
+            final_data = aes(
+                'decrypt', kbag_info['aes'], data, self.iv, self.key)
 
         return final_data
 
@@ -402,10 +407,18 @@ class IMG3(Tag):
 
         magic = magic.to_bytes(4, 'little')[::-1]
 
+        # kernel
         feedface = b'\xfe\xed\xfa\xce'
 
-        if magic == feedface:
-            data = self.compressKernel(data)
+        # Applelogo / RecoveryMode (iBootIm)
+        iboot = b'iBoo'[::-1]
+
+        kbag_tag = self.getTagType('KBAG')
+        kbag_info = self.parseKBAG(kbag_tag)
+
+        if magic == feedface or magic == iboot:
+            if magic == feedface:
+                data = self.compressKernel(data)
 
             # 3.0 / 3.0.1 have the last block
             # of DATA unencrypted
@@ -421,13 +434,10 @@ class IMG3(Tag):
 
                 second = data[-lastBlock:]
 
-                third = aes('encrypt', first, self.iv, self.key)
+                third = aes(
+                    'encrypt', kbag_info['aes'], first, self.iv, self.key)
 
                 data = third + second
-
-        else:
-            if self.iv and self.key:
-                data = aes('encrypt', data, self.iv, self.key)
 
         newDataTag = self.makeTag('DATA', data)
 

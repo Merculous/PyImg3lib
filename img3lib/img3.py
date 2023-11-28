@@ -4,7 +4,7 @@ import struct
 
 import lzss
 
-from .utils import aes, getKernelChecksum
+from .utils import aes, getKernelChecksum, writeBinaryFile
 
 '''
 VERS: iBoot version of the image
@@ -459,3 +459,10 @@ class IMG3(Tag):
         '''
 
         pass
+
+    def extractCertificate(self, path):
+        cert_tag = self.getTagType('CERT')
+
+        cert_data = cert_tag['data']
+
+        writeBinaryFile(path, cert_data)

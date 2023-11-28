@@ -17,6 +17,8 @@ def main():
     parser.add_argument('-c', action='store_true')
     parser.add_argument('-d', action='store_true')
 
+    parser.add_argument('--cert', action='store_true')
+
     parser.add_argument('-iv', nargs=1)
     parser.add_argument('-key', nargs=1)
 
@@ -39,6 +41,9 @@ def main():
             newImg3 = img3file.replaceData(raw_data)
 
             writeBinaryFile(args.o[0], newImg3)
+
+        if args.cert and args.o:
+            img3file.extractCertificate(args.o[0])
 
         if args.a:
             img3file.printAllImg3Info()

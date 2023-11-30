@@ -411,7 +411,7 @@ class IMG3(Tag):
 
         self.newData = first + second + third
 
-    def replaceData(self, data, aes_type):
+    def replaceData(self, data, aes_type=None):
         magic = struct.unpack('<I', data[:4])[0]
 
         magic = magic.to_bytes(4, 'little')[::-1]
@@ -421,6 +421,15 @@ class IMG3(Tag):
 
         # Applelogo / RecoveryMode (iBootIm)
         iboot = b'iBoo'[::-1]
+
+        kbag_tag = self.getTagType('KBAG')
+        kbag_info = self.parseKBAG(kbag_tag)
+
+        if kbag_info:
+            aes_type = kbag_info['aes']
+
+        if aes_type is None:
+            raise Exception('Please select the AES type!')
 
         if magic == feedface or magic == iboot:
             if magic == feedface:

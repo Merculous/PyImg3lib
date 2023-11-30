@@ -11,6 +11,7 @@ def main():
     parser.add_argument('-i', nargs=1)
     parser.add_argument('-o', nargs=1)
 
+    parser.add_argument('--aes', nargs=1)
     parser.add_argument('--data', nargs=1)
 
     parser.add_argument('-a', action='store_true')
@@ -49,7 +50,12 @@ def main():
             img3file.printAllImg3Info()
 
         elif args.d and args.o:
-            decrypted_data = img3file.decrypt()
+            decrypted_data = None
+
+            if args.aes:
+                decrypted_data = img3file.decrypt(args.aes[0])
+            else:
+                decrypted_data = img3file.decrypt()
 
             writeBinaryFile(args.o[0], decrypted_data)
 

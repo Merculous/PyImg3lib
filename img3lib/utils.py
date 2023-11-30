@@ -15,8 +15,14 @@ def writeBinaryFile(path, data):
 
 
 def aes(mode, aes_type, data, iv, key):
-    iv = bytes.fromhex(iv)
-    key = bytes.fromhex(key)
+    if isinstance(aes_type, str):
+        aes_type = int(aes_type)
+
+    if isinstance(iv, str):
+        iv = bytes.fromhex(iv)
+
+    if isinstance(key, str):
+        key = bytes.fromhex(key)
 
     iv_len = len(iv)
     key_len = len(key)

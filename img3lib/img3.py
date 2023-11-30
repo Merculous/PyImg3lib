@@ -73,6 +73,9 @@ class Tag:
         return tag
 
     def parseKBAG(self, tag):
+        if tag is None:
+            return None
+
         data = tag['data']
 
         info = {
@@ -228,7 +231,7 @@ class IMG3(Tag):
 
         return decompressedData
 
-    def decrypt(self):
+    def decrypt(self, aes_type=None):
         if self.iv is None:
             raise Exception('iv is not set!')
 
@@ -240,6 +243,12 @@ class IMG3(Tag):
 
         kbag_tag = self.getTagType('KBAG')
         kbag_info = self.parseKBAG(kbag_tag)
+
+        if kbag_info:
+            aes_type = kbag_info['aes']
+
+        if aes_type is None:
+            raise Exception('Please select the AES type!')
 
         data = data_tag['data']
 
@@ -261,7 +270,7 @@ class IMG3(Tag):
             lastBlockData = data[-lastBlockSize:]
 
             decrypted_data = aes(
-                'decrypt', kbag_info['aes'], dataToDecrypt, self.iv, self.key)
+                'decrypt', aes_type, dataToDecrypt, self.iv, self.key)
 
             final_data = (decrypted_data, lastBlockData)
 
@@ -277,7 +286,7 @@ class IMG3(Tag):
 
         else:
             final_data = aes(
-                'decrypt', kbag_info['aes'], data, self.iv, self.key)
+                'decrypt', aes_type, data, self.iv, self.key)
 
         return final_data
 
@@ -402,7 +411,7 @@ class IMG3(Tag):
 
         self.newData = first + second + third
 
-    def replaceData(self, data):
+    def replaceData(self, data, aes_type):
         magic = struct.unpack('<I', data[:4])[0]
 
         magic = magic.to_bytes(4, 'little')[::-1]
@@ -412,9 +421,6 @@ class IMG3(Tag):
 
         # Applelogo / RecoveryMode (iBootIm)
         iboot = b'iBoo'[::-1]
-
-        kbag_tag = self.getTagType('KBAG')
-        kbag_info = self.parseKBAG(kbag_tag)
 
         if magic == feedface or magic == iboot:
             if magic == feedface:
@@ -435,7 +441,7 @@ class IMG3(Tag):
                 second = data[-lastBlock:]
 
                 third = aes(
-                    'encrypt', kbag_info['aes'], first, self.iv, self.key)
+                    'encrypt', aes_type, first, self.iv, self.key)
 
                 data = third + second
 

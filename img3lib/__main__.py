@@ -19,6 +19,7 @@ def main():
     parser.add_argument('-d', action='store_true')
 
     parser.add_argument('--cert', action='store_true')
+    parser.add_argument('--n8824k', action='store_true')
 
     parser.add_argument('-iv', nargs=1)
     parser.add_argument('-key', nargs=1)
@@ -39,19 +40,19 @@ def main():
         if args.data and args.o:
             raw_data = readBinaryFile(args.data[0])
 
-            newImg3 = None
-
             if args.aes:
-                newImg3 = img3file.replaceData(raw_data, args.aes[0])
+                img3file.replaceData(raw_data, args.aes[0])
             else:
-                newImg3 = img3file.replaceData(raw_data)
+                img3file.replaceData(raw_data)
 
-            writeBinaryFile(args.o[0], newImg3)
+            writeBinaryFile(args.o[0], img3file.newData)
 
-        if args.cert and args.o:
-            img3file.extractCertificate(args.o[0])
+        elif args.cert and args.o:
+            cert_data = img3file.extractCertificate()
 
-        if args.a:
+            writeBinaryFile(args.o[0], cert_data)
+
+        elif args.a:
             img3file.printAllImg3Info()
 
         elif args.d and args.o:
@@ -63,6 +64,11 @@ def main():
                 decrypted_data = img3file.decrypt()
 
             writeBinaryFile(args.o[0], decrypted_data)
+
+        elif args.n8824k and args.o:
+            img3file.do3GSLLBHax()
+
+            writeBinaryFile(args.o[0], img3file.data)
 
     else:
         parser.print_help()

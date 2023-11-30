@@ -4,7 +4,8 @@ import struct
 
 import lzss
 
-from .utils import aes, getKernelChecksum, writeBinaryFile
+from .kpwn import N88_BOOTSTRAP, N88_DATA, N88_SHELLCODE
+from .utils import aes, getKernelChecksum, getSHA1
 
 '''
 VERS: iBoot version of the image
@@ -131,8 +132,7 @@ class Tag:
 
         paddingLength = totalLength - dataLength - headsize
 
-        # TODO Idk if this is good to do atm
-        padding = [0] * paddingLength if paddingLength != 0 else None
+        padding = b'\x00' * paddingLength if paddingLength != 0 else None
 
         tag = {
             'magic': magicFormatted,
@@ -156,7 +156,17 @@ class IMG3(Tag):
         self.info = self.readImg3()
         self.tags = self.info['tags']
 
-        self.newData = None
+    def readTags(self, i, data):
+        tags = []
+
+        while i != len(data):
+            tag = self.readTag(i)
+
+            tags.append(tag)
+
+            i += tag['totalLength']
+
+        return tags
 
     def readImg3(self):
         '''
@@ -185,17 +195,8 @@ class IMG3(Tag):
             'sizeNoPack': sizeNoPack,
             'sigCheckArea': sigCheckArea,
             'ident': ident.to_bytes(4, 'little'),
-            'tags': []
+            'tags': self.readTags(headSize, self.data)
         }
-
-        i = headSize
-
-        while i != len(self.data):
-            tag = self.readTag(i)
-
-            img3_data['tags'].append(tag)
-
-            i += tag['totalLength']
 
         return img3_data
 
@@ -296,6 +297,7 @@ class IMG3(Tag):
         print(f'Image3 type: {img3_type}')
         print(f'Full size: {self.info["fullSize"]}')
         print(f'Unpacked size: {self.info["sizeNoPack"]}')
+        print(f'SigCheckArea: {self.info["sigCheckArea"]}')
 
         print('\n')
 
@@ -376,8 +378,6 @@ class IMG3(Tag):
         return final
 
     def getTagOffset(self, magic):
-        self.length = len(self.data)
-
         i = 20
 
         for tag in self.tags:
@@ -401,7 +401,10 @@ class IMG3(Tag):
             packed = struct.pack(
                 f'<4s2I{tag["dataLength"]}B', *tag_head, *tag['data'])
         else:
-            pass
+            padding_len = len(tag['pad'])
+
+            packed = struct.pack(
+                f'<4s2I{tag["dataLength"]}B{padding_len}B', *tag_head, *tag['data'], *tag['pad'])
 
         first = self.data[:tag_offset]
 
@@ -409,7 +412,12 @@ class IMG3(Tag):
 
         third = self.data[tag_offset+len(second):]
 
-        self.newData = first + second + third
+        self.data = first + second + third
+
+        # Update self.info and self.tags
+
+        self.info = self.readImg3()
+        self.tags = self.info['tags']
 
     def replaceData(self, data, aes_type=None):
         magic = struct.unpack('<I', data[:4])[0]
@@ -454,30 +462,131 @@ class IMG3(Tag):
 
                 data = third + second
 
+        else:
+            if self.iv and self.key:
+                data = aes('encrypt', aes_type, data, self.iv, self.key)
+
         newDataTag = self.makeTag('DATA', data)
 
         self.writeTag(newDataTag)
 
-        return self.newData
-
-    def makeImage(self):
-        '''
-        TYPE
-        DATA
-        VERS (iBoot)
-        SEPO
-        BORD (iBoot)
-        KBAG (prod)
-        KBAG (dev)
-        SHSH
-        CERT
-        '''
-
-        pass
-
-    def extractCertificate(self, path):
+    def extractCertificate(self):
         cert_tag = self.getTagType('CERT')
 
         cert_data = cert_tag['data']
 
-        writeBinaryFile(path, cert_data)
+        return cert_data
+
+    def updateHead(self):
+        fullSize = 20
+        sizeNoPack = 0
+        sigCheckArea = 0
+
+        ignore = (
+            b'SHSH'[::-1],
+            b'CERT'[::-1]
+        )
+
+        for tag in self.tags:
+            fullSize += tag['totalLength']
+            sizeNoPack += tag['totalLength']
+
+            if tag['magic'] not in ignore:
+                sigCheckArea += tag['totalLength']
+
+        self.info['fullSize'] = fullSize
+        self.info['sizeNoPack'] = sizeNoPack
+        self.info['sigCheckArea'] = sigCheckArea
+
+        head = (
+            self.info['magic'],
+            self.info['fullSize'],
+            self.info['sizeNoPack'],
+            self.info['sigCheckArea'],
+            self.info['ident']
+        )
+
+        new_head = struct.pack('<4s3I4s', *head)
+
+        body = self.data[20:]
+
+        self.data = new_head + body
+
+    def do3GSLLBHax(self):
+        type_tag = self.getTagType('TYPE')
+
+        image_type = type_tag['data'][::-1].decode()
+
+        if image_type != 'illb':
+            raise Exception(f'Got image type: {image_type}. Expected illb!')
+
+        cert_tag = self.getTagType('CERT')
+        cert_data = cert_tag['data']
+        cert_pad_len = len(cert_tag['pad'])
+
+        zero_padding = b'\x00' * cert_pad_len
+
+        zero_1st_section = b'\x00' * 0x126b0
+
+        zero_2nd_section = b'\x00' * 0xfc0
+
+        shellcode = b''.join(N88_SHELLCODE)
+
+        bootstrap = b''.join(N88_BOOTSTRAP)
+
+        new_data = cert_data + zero_padding + zero_1st_section + \
+            shellcode + zero_2nd_section + bootstrap
+
+        new_data_len = len(new_data)
+
+        if new_data_len != 81964:
+            raise Exception('LLB 24kpwn creation failed!')
+
+        new_cert_tag = self.makeTag('CERT', new_data)
+
+        good_cert_SHA1 = 'd332265111a9c0c4ae9b1ca30a589cc5ad56a074'
+
+        new_data_SHA1 = getSHA1(new_data)
+
+        if new_data_SHA1 != good_cert_SHA1:
+            raise Exception(
+                f'Data size is correct, but hash is not: {new_data_SHA1}')
+
+        good_data_SHA1 = '20811e9c4b20a487dd7a522fb926eecf015be022'
+
+        data_tag = self.getTagType('DATA')
+        data_tag_len = data_tag['dataLength']
+
+        data_tag_data = self.decrypt()
+
+        new_data_head = b''.join(N88_DATA)
+
+        second = data_tag_data[20:data_tag_len]
+
+        third = new_data_head + second
+
+        new_data_tag_data_SHA1 = getSHA1(third)
+
+        if new_data_tag_data_SHA1 != good_data_SHA1:
+            raise Exception(
+                'First 20 bytes of DATA failed to patch correctly!')
+
+        self.replaceData(third)
+
+        self.writeTag(new_cert_tag)
+
+        # xpwntool just overwrites padding with 0's
+        # While I don't think this really matters,
+        # I'll do it anyway so that the code will
+        # produced an EXACT match, cause why not.
+
+        type_tag = self.getTagType('TYPE')
+
+        type_padding = type_tag['pad']
+        padding_len = len(type_padding)
+
+        type_tag['pad'] = b'\x00' * padding_len
+
+        self.writeTag(type_tag)
+
+        self.updateHead()

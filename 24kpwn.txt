@@ -25,7 +25,7 @@ The first 0x14/20 bytes are modified.
 Seems like CERT for 24KPWN is the same, expect the end of CERT
 is b'\x00' * 80014
 
-Actually, everything is b'\x00' except 0x12e50 -> 0x12e9f (50 / 0x32)
+Actually, everything is b'\x00' except 0x12e50 -> 0x12e9f (80 / 0x50)
 
 This is THUMB code
 
@@ -83,3 +83,9 @@ DATA:
 
  20 5C C2 09 2D D0 8F 55 06 11 A8 7A 5D DE FF 82
  82 12 DB 90
+
+To "reproduce":
+    1. At the end of CERT, we add b'\x00' * 0x126bf
+    2. Add in the shellcode, which is 0x44 in len
+    3. Then add another b'\x00' * 0xfc0
+    4. Add bootstrap

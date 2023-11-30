@@ -1,4 +1,5 @@
 
+from hashlib import sha1
 from zlib import adler32
 
 from Crypto.Cipher import AES
@@ -64,3 +65,7 @@ def aes(mode, aes_type, data, iv, key):
 
 def getKernelChecksum(data):
     return adler32(data)
+
+
+def getSHA1(data):
+    return sha1(data).hexdigest()

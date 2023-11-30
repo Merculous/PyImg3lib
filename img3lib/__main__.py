@@ -45,7 +45,7 @@ def main():
             else:
                 img3file.replaceData(raw_data)
 
-            writeBinaryFile(args.o[0], img3file.newData)
+            writeBinaryFile(args.o[0], img3file.data)
 
         elif args.cert and args.o:
             cert_data = img3file.extractCertificate()

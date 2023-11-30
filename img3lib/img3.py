@@ -128,11 +128,17 @@ class Tag:
 
         dataLength = len(data)
 
-        totalLength = dataLength + headsize
+        padCheck = dataLength
 
-        paddingLength = totalLength - dataLength - headsize
+        pad_len = 0
 
-        padding = b'\x00' * paddingLength if paddingLength != 0 else None
+        while padCheck % 16 != 0:
+            padCheck += 1
+            pad_len += 1
+
+        totalLength = pad_len + dataLength + headsize
+
+        padding = b'\x00' * pad_len
 
         tag = {
             'magic': magicFormatted,
@@ -395,26 +401,20 @@ class IMG3(Tag):
             tag['dataLength']
         )
 
-        packed = None
-
-        if tag['pad'] is None:
-            packed = struct.pack(
-                f'<4s2I{tag["dataLength"]}B', *tag_head, *tag['data'])
-        else:
-            padding_len = len(tag['pad'])
-
-            packed = struct.pack(
-                f'<4s2I{tag["dataLength"]}B{padding_len}B', *tag_head, *tag['data'], *tag['pad'])
+        packed = struct.pack(
+            f'<4s2I{tag["dataLength"]}B', *tag_head, *tag['data'])
 
         first = self.data[:tag_offset]
 
-        second = packed
+        second = packed + tag['pad']
 
         third = self.data[tag_offset+len(second):]
 
         self.data = first + second + third
 
         # Update self.info and self.tags
+
+        self.updateHead()
 
         self.info = self.readImg3()
         self.tags = self.info['tags']
@@ -588,5 +588,3 @@ class IMG3(Tag):
         type_tag['pad'] = b'\x00' * padding_len
 
         self.writeTag(type_tag)
-
-        self.updateHead()

@@ -39,7 +39,12 @@ def main():
         if args.data and args.o:
             raw_data = readBinaryFile(args.data[0])
 
-            newImg3 = img3file.replaceData(raw_data)
+            newImg3 = None
+
+            if args.aes:
+                newImg3 = img3file.replaceData(raw_data, args.aes[0])
+            else:
+                newImg3 = img3file.replaceData(raw_data)
 
             writeBinaryFile(args.o[0], newImg3)
 

@@ -132,9 +132,10 @@ class Tag:
 
         pad_len = 0
 
-        while padCheck % 16 != 0:
-            padCheck += 1
-            pad_len += 1
+        if magic == 'DATA':
+            while padCheck % 16 != 0:
+                padCheck += 1
+                pad_len += 1
 
         totalLength = pad_len + dataLength + headsize
 

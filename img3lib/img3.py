@@ -4,8 +4,8 @@ import struct
 
 import lzss
 
-from .kpwn import N88_BOOTSTRAP, N88_DATA, N88_SHELLCODE
-from .utils import aes, getKernelChecksum, getSHA1
+from .kpwn import N88_BOOTSTRAP, N88_SHELLCODE, N88_SHELLCODE_ADDRESS
+from .utils import aes, getKernelChecksum
 
 '''
 VERS: iBoot version of the image
@@ -415,10 +415,10 @@ class IMG3(Tag):
 
         # Update self.info and self.tags
 
-        self.updateHead()
-
         self.info = self.readImg3()
         self.tags = self.info['tags']
+
+        self.updateHead()
 
     def replaceData(self, data, aes_type=None):
         magic = struct.unpack('<I', data[:4])[0]
@@ -521,71 +521,63 @@ class IMG3(Tag):
         if image_type != 'illb':
             raise Exception(f'Got image type: {image_type}. Expected illb!')
 
+        # Update DATA's first dword with shellcode address
+
+        data_tag = self.getTagType('DATA')
+        data_tag_data = data_tag['data']
+
+        dword = data_tag_data[:4]
+
+        data = data_tag_data[4:data_tag['dataLength']]
+
+        new_data_tag = self.makeTag('DATA', N88_SHELLCODE_ADDRESS + data)
+
+        self.writeTag(new_data_tag)
+
         cert_tag = self.getTagType('CERT')
         cert_data = cert_tag['data']
-        cert_pad_len = len(cert_tag['pad'])
+        cert_pad = cert_tag['pad']
 
-        zero_padding = b'\x00' * cert_pad_len
+        cert_start = self.getTagOffset(b'CERT'[::-1])
 
-        zero_1st_section = b'\x00' * 0x126b0
-
-        zero_2nd_section = b'\x00' * 0xfc0
+        cert_end = cert_start + cert_tag['totalLength']
 
         shellcode = b''.join(N88_SHELLCODE)
+        shellcode_len = len(shellcode)
 
         bootstrap = b''.join(N88_BOOTSTRAP)
 
-        new_data = cert_data + zero_padding + zero_1st_section + \
-            shellcode + zero_2nd_section + bootstrap
+        shellcode_to_bootstrap_dist = 0xfb0
 
-        new_data_len = len(new_data)
+        bootstrap_start = 0x24000
 
-        if new_data_len != 81964:
-            raise Exception('LLB 24kpwn creation failed!')
+        shellcode_start = bootstrap_start - shellcode_to_bootstrap_dist - shellcode_len
 
-        new_cert_tag = self.makeTag('CERT', new_data)
+        zeroes_after_cert = shellcode_start - cert_end
 
-        good_cert_SHA1 = 'd332265111a9c0c4ae9b1ca30a589cc5ad56a074'
+        n8824k_data = (
+            cert_data + cert_pad,
+            b'\x00' * zeroes_after_cert,
+            shellcode.replace(b'\xAA\xBB\xCC\xDD', dword),
+            b'\x00' * shellcode_to_bootstrap_dist,
+            bootstrap
+        )
 
-        new_data_SHA1 = getSHA1(new_data)
+        patched_cert_data = b''.join(n8824k_data)
 
-        if new_data_SHA1 != good_cert_SHA1:
-            raise Exception(
-                f'Data size is correct, but hash is not: {new_data_SHA1}')
+        patched_cert_tag = self.makeTag('CERT', patched_cert_data)
 
-        good_data_SHA1 = '20811e9c4b20a487dd7a522fb926eecf015be022'
+        self.writeTag(patched_cert_tag)
 
-        data_tag = self.getTagType('DATA')
-        data_tag_len = data_tag['dataLength']
-
-        data_tag_data = self.decrypt()
-
-        new_data_head = b''.join(N88_DATA)
-
-        second = data_tag_data[20:data_tag_len]
-
-        third = new_data_head + second
-
-        new_data_tag_data_SHA1 = getSHA1(third)
-
-        if new_data_tag_data_SHA1 != good_data_SHA1:
-            raise Exception(
-                'First 20 bytes of DATA failed to patch correctly!')
-
-        self.replaceData(third)
-
-        self.writeTag(new_cert_tag)
-
-        # xpwntool just overwrites padding with 0's
-        # While I don't think this really matters,
-        # I'll do it anyway so that the code will
-        # produced an EXACT match, cause why not.
+        # xpwntool turns all padding values to '\x00' in TYPE
 
         type_tag = self.getTagType('TYPE')
 
         type_padding = type_tag['pad']
-        padding_len = len(type_padding)
+        type_padding_len = len(type_padding)
 
-        type_tag['pad'] = b'\x00' * padding_len
+        type_padding = b'\x00' * type_padding_len
+
+        type_tag['pad'] = type_padding
 
         self.writeTag(type_tag)

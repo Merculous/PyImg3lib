@@ -1,7 +1,8 @@
 .vscode
 venv
 __pycache__
-*ipsw
+*.ipsw
 dist
 kernelcache*
 work
+IPSW

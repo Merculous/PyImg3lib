@@ -163,6 +163,8 @@ class IMG3(Tag):
         self.info = self.readImg3()
         self.tags = self.info['tags']
 
+        self.lzss_version = 0
+
     def readTags(self, i, data):
         tags = []
 
@@ -215,29 +217,40 @@ class IMG3(Tag):
                 return tag
 
     def decompressKernel(self, data):
-        headsize = 20
+        headsize = 0x18
 
-        (
-            signature,
-            compression_type,
-            checksum,
-            decompressed_len,
-            compressed_len
-        ) = struct.unpack('<5I', data[0][:headsize])
+        signature, compression_type = struct.unpack('4s4s', data[0][:8])
 
-        signature = signature.to_bytes(4, 'little')
-        compression_type = compression_type.to_bytes(4, 'little')
+        # Apparently all lzss stuff is big endian :/
+
+        checksum, decompress_len, compress_len, version = struct.unpack(
+            '>4I', data[0][8:headsize])
 
         if signature != b'comp' or compression_type != b'lzss':
             raise Exception('Kernel DATA header is bad!')
 
-        dataAfterPadding = data[0][0x180:]
+        pad_start = 0x168 + headsize
+
+        dataAfterPadding = data[0][pad_start:]
 
         dataToDecompress = dataAfterPadding + data[1]
 
         decompressedData = lzss.decompress(dataToDecompress)
 
-        return decompressedData
+        # FIXME
+        # Do hash and size checks
+
+        output = (
+            binascii.hexlify(checksum.to_bytes(4)).decode(),
+            decompress_len,
+            compress_len,
+            version,
+            decompressedData
+        )
+
+        self.lzss_version = version
+
+        return output
 
     def decrypt(self, aes_type=None):
         if self.iv is None:
@@ -259,7 +272,6 @@ class IMG3(Tag):
             raise Exception('Please select the AES type!')
 
         data = data_tag['data']
-
         dataLen = data_tag['dataLength']
 
         tag_type = type_tag['data'][::-1].decode()
@@ -286,8 +298,15 @@ class IMG3(Tag):
             # Allow user to disable decompression
 
             if tag_type == 'krnl':
-                # This will return bytes instead
-                final_data = self.decompressKernel(final_data)
+                (
+                    checksum,
+                    decompressed_len,
+                    compressed_len,
+                    version,
+                    decompressedData
+                ) = self.decompressKernel(final_data)
+
+                final_data = decompressedData
 
             else:
                 final_data = decrypted_data + lastBlockData
@@ -365,22 +384,22 @@ class IMG3(Tag):
     def compressKernel(self, data):
         compressed = lzss.compress(data)
 
-        padding_len = 0x180 - 0x14
+        padding_len = 0x168
 
-        padding = [0] * padding_len
+        padding = b'\x00' * padding_len
 
         output = (
-            b'comp',
-            b'lzss',
             getKernelChecksum(compressed),
             len(data),
-            len(compressed)
+            len(compressed),
+            self.lzss_version
         )
 
-        output_packed = struct.pack('<4s4s3I', *output)
-        padding_packed = struct.pack(f'{padding_len}B', *padding)
+        # LZSS must be big endian
 
-        final = output_packed + padding_packed + compressed
+        output_packed = struct.pack('>4I', *output)
+
+        final = b'complzss' + output_packed + padding + compressed
 
         return final
 
@@ -570,8 +589,6 @@ class IMG3(Tag):
         self.writeTag(patched_cert_tag)
 
         # xpwntool turns all padding values to '\x00' in TYPE
-
-        type_tag = self.getTagType('TYPE')
 
         type_padding = type_tag['pad']
         type_padding_len = len(type_padding)

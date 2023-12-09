@@ -389,7 +389,7 @@ class IMG3(Tag):
         padding = b'\x00' * padding_len
 
         output = (
-            getKernelChecksum(compressed),
+            getKernelChecksum(data),
             len(data),
             len(compressed),
             self.lzss_version

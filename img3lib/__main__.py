@@ -22,7 +22,7 @@ def main():
     parser.add_argument('--n8824k', action='store_true')
 
     parser.add_argument('-iv', nargs=1)
-    parser.add_argument('-key', nargs=1)
+    parser.add_argument('-k', nargs=1)
 
     args = parser.parse_args()
 
@@ -34,8 +34,8 @@ def main():
         if args.iv:
             img3file.iv = args.iv[0]
 
-        if args.key:
-            img3file.key = args.key[0]
+        if args.k:
+            img3file.key = args.k[0]
 
         if args.data and args.o:
             raw_data = readBinaryFile(args.data[0])

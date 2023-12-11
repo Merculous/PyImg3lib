@@ -2,10 +2,9 @@
 import binascii
 import struct
 
-import lzss
-
 from .kpwn import N88_BOOTSTRAP, N88_SHELLCODE, N88_SHELLCODE_ADDRESS
-from .utils import aes, getKernelChecksum
+from .lzsscode import LZSS
+from .utils import doAES, formatData, getBufferAtIndex, getKernelChecksum, pad
 
 '''
 VERS: iBoot version of the image
@@ -22,9 +21,9 @@ TYPE: Type of image, should contain the same string as the header's ident
 DATA: Real content of the file
 NONC: Nonce used when file was signed.
 CEPO: Chip epoch
-OVRD:
-RAND:
-SALT:
+OVRD: JTAG maybe?
+RAND: IDK
+SALT: Encryption maybe?
 '''
 
 '''
@@ -37,7 +36,7 @@ class Tag:
     def __init__(self):
         pass
 
-    def readTag(self, i):
+    def readTag(self, i, data):
         '''
         typedef struct img3Tag {
             uint32_t magic;            // see below
@@ -48,18 +47,23 @@ class Tag:
         };
         '''
 
-        magic, totalLength, dataLength = struct.unpack(
-            '<3I', self.data[i:i+12])
+        tag_head = getBufferAtIndex(data, i, 12)
+
+        (
+            magic,
+            totalLength,
+            dataLength
+        ) = formatData('<3I', tag_head, False)
 
         i += 12
 
-        tag_data = self.data[i:i+dataLength]
+        tag_data = getBufferAtIndex(data, i, dataLength)
 
         i += dataLength
 
         padSize = totalLength - dataLength - 12
 
-        padding = self.data[i:i+padSize]
+        padding = getBufferAtIndex(data, i, padSize)
 
         i += padSize
 
@@ -77,6 +81,9 @@ class Tag:
         if tag is None:
             return None
 
+        if tag['magic'] != b'KBAG'[::-1]:
+            raise Exception('This is not a KBAG tag!')
+
         data = tag['data']
 
         info = {
@@ -86,21 +93,30 @@ class Tag:
             'key': None
         }
 
-        i = 0
+        aes_data = getBufferAtIndex(data, 0, 8)
 
-        cryptState, aesType = struct.unpack('<2I', data[i:8])
+        cryptState, aesType = formatData('<2I', aes_data, False)
 
         if cryptState == 2:
             info['dev'] = True
 
         info['aes'] = aesType
 
-        i += 8
+        crypto_data = getBufferAtIndex(data, 8, tag['dataLength'] - 8)
 
-        if info['aes'] == 256:
-            iv, key = struct.unpack('<16s32s', data[i:len(data)])
+        iv, key = None, None
+
+        if info['aes'] == 128:
+            iv, key = formatData('<16s16s', crypto_data, False)
+
+        elif info['aes'] == 192:
+            iv, key = formatData('<16s24s', crypto_data, False)
+
+        elif info['aes'] == 256:
+            iv, key = formatData('<16s32s', crypto_data, False)
+
         else:
-            pass
+            raise Exception(f'Unknown aes: {info["aes"]}')
 
         info['iv'] = binascii.hexlify(iv).decode()
         info['key'] = binascii.hexlify(key).decode()
@@ -160,16 +176,22 @@ class IMG3(Tag):
         self.iv = iv
         self.key = key
 
-        self.info = self.readImg3()
-        self.tags = self.info['tags']
+        self.info = self.readImg3Head()
+        self.tags = self.readTags()
 
-        self.lzss_version = 0
+        # self.lzss_version = 0
 
-    def readTags(self, i, data):
+    def readTags(self):
+        sizeNoPack = self.info['sizeNoPack']
+
+        data = getBufferAtIndex(self.data, 20, sizeNoPack)
+
+        i = 0
+
         tags = []
 
-        while i != len(data):
-            tag = self.readTag(i)
+        while i != sizeNoPack:
+            tag = self.readTag(i, data)
 
             tags.append(tag)
 
@@ -177,7 +199,7 @@ class IMG3(Tag):
 
         return tags
 
-    def readImg3(self):
+    def readImg3Head(self):
         '''
         typedef struct img3File {
             uint32_t magic;       // ASCII_LE("Img3")
@@ -193,18 +215,22 @@ class IMG3(Tag):
         };
         '''
 
-        headSize = 20
+        head = getBufferAtIndex(self.data, 0, 20)
 
-        magic, fullSize, sizeNoPack, sigCheckArea, ident = struct.unpack(
-            '<5I', self.data[:headSize])
+        (
+            magic,
+            fullSize,
+            sizeNoPack,
+            sigCheckArea,
+            ident
+        ) = formatData('<5I', head, False)
 
         img3_data = {
             'magic': magic.to_bytes(4, 'little'),
             'fullSize': fullSize,
             'sizeNoPack': sizeNoPack,
             'sigCheckArea': sigCheckArea,
-            'ident': ident.to_bytes(4, 'little'),
-            'tags': self.readTags(headSize, self.data)
+            'ident': ident.to_bytes(4, 'little')
         }
 
         return img3_data
@@ -216,106 +242,79 @@ class IMG3(Tag):
             if tag_type == tag_magic:
                 return tag
 
-    def decompressKernel(self, data):
-        headsize = 0x18
+    def getAESType(self):
+        kbag_tag = self.getTagType('KBAG')
+        kbag_info = self.parseKBAG(kbag_tag)
+        return kbag_info['aes']
 
-        signature, compression_type = struct.unpack('4s4s', data[0][:8])
+    def getDATABlocks(self, data):
+        data_len = len(data)
 
-        # Apparently all lzss stuff is big endian :/
+        start = data_len & ~0xF
+        end = data_len & 0xF
 
-        checksum, decompress_len, compress_len, version = struct.unpack(
-            '>4I', data[0][8:headsize])
+        start_data = getBufferAtIndex(data, 0, start)
+        end_data = getBufferAtIndex(data, start, end)
 
-        if signature != b'comp' or compression_type != b'lzss':
-            raise Exception('Kernel DATA header is bad!')
+        blocks = (start_data, end_data)
 
-        pad_start = 0x168 + headsize
+        return blocks
 
-        dataAfterPadding = data[0][pad_start:]
-
-        dataToDecompress = dataAfterPadding + data[1]
-
-        decompressedData = lzss.decompress(dataToDecompress)
-
-        # FIXME
-        # Do hash and size checks
-
-        output = (
-            binascii.hexlify(checksum.to_bytes(4)).decode(),
-            decompress_len,
-            compress_len,
-            version,
-            decompressedData
-        )
-
-        self.lzss_version = version
-
-        return output
-
-    def decrypt(self, aes_type=None):
+    def decrypt(self):
         if self.iv is None:
             raise Exception('iv is not set!')
 
         if self.key is None:
             raise Exception('key is not set!')
 
-        type_tag = self.getTagType('TYPE')
+        mode = 'decrypt'
+
+        iv = self.iv
+        key = self.key
+
         data_tag = self.getTagType('DATA')
 
-        kbag_tag = self.getTagType('KBAG')
-        kbag_info = self.parseKBAG(kbag_tag)
-
-        if kbag_info:
-            aes_type = kbag_info['aes']
-
-        if aes_type is None:
-            raise Exception('Please select the AES type!')
+        aes_type = self.getAESType()
 
         data = data_tag['data']
-        dataLen = data_tag['dataLength']
 
-        tag_type = type_tag['data'][::-1].decode()
+        padding = data_tag['pad']
+        pad_len = len(padding)
 
-        final_data = None
+        first_block, last_block = self.getDATABlocks(data)
 
-        edge_cases = ('krnl', 'logo', 'recm')
+        decrypted = None
+        final = None
 
-        if tag_type in edge_cases:
-            lenOfDataToDecrypt = dataLen & ~0xF
+        # TODO
+        # 3.1+ seems to have last_block encrypted
+        # Also the padding can be encrypted too
 
-            lastBlockSize = dataLen - lenOfDataToDecrypt
+        zeroed_padding = b'\x00' * pad_len
 
-            dataToDecrypt = data[:lenOfDataToDecrypt]
+        if padding != zeroed_padding:
+            # Assume that last_block and padding are encrypted?
 
-            lastBlockData = data[-lastBlockSize:]
+            to_decrypt = first_block + last_block + padding
 
-            decrypted_data = aes(
-                'decrypt', aes_type, dataToDecrypt, self.iv, self.key)
+            decrypted = doAES(mode, aes_type, to_decrypt, iv, key)
 
-            final_data = (decrypted_data, lastBlockData)
+            no_pad = len(decrypted) - pad_len
 
-            # TODO
-            # Allow user to disable decompression
+            # Remove padding
 
-            if tag_type == 'krnl':
-                (
-                    checksum,
-                    decompressed_len,
-                    compressed_len,
-                    version,
-                    decompressedData
-                ) = self.decompressKernel(final_data)
-
-                final_data = decompressedData
-
-            else:
-                final_data = decrypted_data + lastBlockData
+            final = getBufferAtIndex(decrypted, 0, no_pad)
 
         else:
-            final_data = aes(
-                'decrypt', aes_type, data, self.iv, self.key)
+            to_decrypt = first_block
 
-        return final_data
+            decrypted = doAES(mode, aes_type, to_decrypt, iv, key)
+
+            # Seems like padding is useless here
+
+            final = decrypted + last_block
+
+        return final
 
     def printAllImg3Info(self):
         img3_type = self.info['ident'][::-1].decode()
@@ -380,28 +379,6 @@ class IMG3(Tag):
                 print(f'Board: {board}')
 
             print('\n')
-
-    def compressKernel(self, data):
-        compressed = lzss.compress(data)
-
-        padding_len = 0x168
-
-        padding = b'\x00' * padding_len
-
-        output = (
-            getKernelChecksum(data),
-            len(data),
-            len(compressed),
-            self.lzss_version
-        )
-
-        # LZSS must be big endian
-
-        output_packed = struct.pack('>4I', *output)
-
-        final = b'complzss' + output_packed + padding + compressed
-
-        return final
 
     def getTagOffset(self, magic):
         i = 20
@@ -598,3 +575,16 @@ class IMG3(Tag):
         type_tag['pad'] = type_padding
 
         self.writeTag(type_tag)
+
+    def handleKernelData(self, data):
+        # Check that our img3 is actually a kernel
+
+        if self.info['ident'] != b'krnl'[::-1]:
+            raise Exception('This is not a kernel!')
+
+        # Only work on decrypted data
+
+        lzss_obj = LZSS(data)
+        lzss_data = lzss_obj.go()
+
+        return lzss_data

@@ -6,3 +6,4 @@ dist
 kernelcache*
 work
 IPSW
+*.bin

@@ -1,4 +1,6 @@
 
+import struct
+
 from hashlib import sha1
 from zlib import adler32
 
@@ -15,7 +17,7 @@ def writeBinaryFile(path, data):
         f.write(data)
 
 
-def aes(mode, aes_type, data, iv, key):
+def doAES(mode, aes_type, data, iv, key):
     if isinstance(aes_type, str):
         aes_type = int(aes_type)
 
@@ -69,3 +71,56 @@ def getKernelChecksum(data):
 
 def getSHA1(data):
     return sha1(data).hexdigest()
+
+
+def getBufferAtIndex(data, index, length):
+    buffer = data[index:index+length]
+
+    buffer_len = len(buffer)
+
+    if buffer_len != length:
+        raise Exception(f'Buffer length mismatch! Got {buffer_len}')
+
+    return buffer
+
+
+def formatData(format, data, pack=True):
+    formatted_data = None
+
+    # Use "*" if we are given a list/tuple
+    unpack_var = False
+
+    if isinstance(data, list) or isinstance(data, tuple):
+        unpack_var = True
+
+    if pack is True:
+        if unpack_var:
+            formatted_data = struct.pack(format, *data)
+        else:
+            formatted_data = struct.pack(format, data)
+
+    elif pack is False:
+        if unpack_var:
+            formatted_data = struct.unpack(format, *data)
+        else:
+            formatted_data = struct.unpack(format, data)
+    else:
+        raise ValueError(f'Expected pack as bool, got: {type(pack)}')
+
+    return formatted_data
+
+
+def pad(data):
+    data_len = len(data)
+
+    pad_check = data_len
+
+    padding = 0
+
+    while pad_check % 16 != 0:
+        pad_check += 1
+        padding += 1
+
+    padded_data = data + (b'\x00' * padding)
+
+    return padded_data

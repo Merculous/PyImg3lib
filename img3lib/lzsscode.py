@@ -24,21 +24,37 @@ class LZSS:
             mode = 'decompress'
 
         else:
-            pass
+            head = getBufferAtIndex(buffer, 0, 4)
+
+            head = formatData('<I', head, False)[0].to_bytes(4)
+
+            kernel_magic = b'\xfe\xed\xfa\xce'
+
+            if head == kernel_magic:
+                mode = 'compress'
 
         return mode
 
     def compress(self):
         compressed = lzss.compress(self.data)
+        compressed_len = len(compressed)
+
+        # FIXME
+        # Correct version as I know for sure I can have it
+        # passed to here.
 
         to_pack = (
             b'comp',
             b'lzss',
             getKernelChecksum(self.data),
             self.data_len,
-            len(compressed),
-            1  # Some versions are 0
+            compressed_len,
+            0
         )
+
+        # iOS 3.1.3 version is 0
+
+        # Others can be 1
 
         head = formatData('>4s4s4I', to_pack)
 

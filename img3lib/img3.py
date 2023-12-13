@@ -4,7 +4,7 @@ import struct
 
 from .kpwn import N88_BOOTSTRAP, N88_SHELLCODE, N88_SHELLCODE_ADDRESS
 from .lzsscode import LZSS
-from .utils import doAES, formatData, getBufferAtIndex, getKernelChecksum, pad
+from .utils import doAES, formatData, getBufferAtIndex, pad
 
 '''
 VERS: iBoot version of the image
@@ -37,16 +37,6 @@ class Tag:
         pass
 
     def readTag(self, i, data):
-        '''
-        typedef struct img3Tag {
-            uint32_t magic;            // see below
-            uint32_t totalLength;      // length of tag including "magic" and these two length values
-            uint32_t dataLength;       // length of tag data
-            uint8_t  data[dataLength];
-            uint8_t  pad[totalLength - dataLength - 12]; // Typically padded to 4 byte multiple
-        };
-        '''
-
         tag_head = getBufferAtIndex(data, i, 12)
 
         (
@@ -123,7 +113,7 @@ class Tag:
 
         return info
 
-    def makeTag(self, magic, data):
+    def makeTag(self, magic, data, padding):
         valid_magic = (
             'TYPE',
             'DATA',
@@ -142,20 +132,11 @@ class Tag:
 
         headsize = 12
 
+        pad_len = len(padding)
+
         dataLength = len(data)
 
-        padCheck = dataLength
-
-        pad_len = 0
-
-        if magic == 'DATA':
-            while padCheck % 16 != 0:
-                padCheck += 1
-                pad_len += 1
-
-        totalLength = pad_len + dataLength + headsize
-
-        padding = b'\x00' * pad_len
+        totalLength = dataLength + headsize + pad_len
 
         tag = {
             'magic': magicFormatted,
@@ -179,8 +160,6 @@ class IMG3(Tag):
         self.info = self.readImg3Head()
         self.tags = self.readTags()
 
-        # self.lzss_version = 0
-
     def readTags(self):
         sizeNoPack = self.info['sizeNoPack']
 
@@ -200,21 +179,6 @@ class IMG3(Tag):
         return tags
 
     def readImg3Head(self):
-        '''
-        typedef struct img3File {
-            uint32_t magic;       // ASCII_LE("Img3")
-            uint32_t fullSize;    // full size of fw image
-            uint32_t sizeNoPack;  // size of fw image without header
-            uint32_t sigCheckArea;// although that is just my name for it, this is the
-                                // size of the start of the data section (the code) up to
-                                // the start of the RSA signature (SHSH section)
-            uint32_t ident;       // identifier of image, used when bootrom is parsing images
-                                // list to find LLB (illb), LLB parsing it to find iBoot (ibot),
-                                // etc.
-            img3Tag  tags[];      // continues until end of file
-        };
-        '''
-
         head = getBufferAtIndex(self.data, 0, 20)
 
         (
@@ -390,82 +354,91 @@ class IMG3(Tag):
                 return i
 
     def writeTag(self, tag):
-        tag_offset = self.getTagOffset(tag['magic'])
+        magic = tag['magic']
 
         tag_head = (
-            tag['magic'],
+            magic,
             tag['totalLength'],
             tag['dataLength']
         )
 
-        packed = struct.pack(
-            f'<4s2I{tag["dataLength"]}B', *tag_head, *tag['data'])
+        tag_data = tag['data']
+        data_len = len(tag_data)
 
-        first = self.data[:tag_offset]
+        tag_padding = tag['pad']
+        # pad_len = len(tag_padding)
 
-        second = packed + tag['pad']
+        if data_len != tag['dataLength']:
+            raise Exception('Tag data does not match dataLength!')
 
-        third = self.data[tag_offset+len(second):]
+        head = formatData('<4s2I', tag_head)
 
-        self.data = first + second + third
+        final = head + tag_data + tag_padding
+        final_len = len(final)
+
+        if tag['totalLength'] != final_len:
+            raise Exception('Total length does not match other lengths!')
+
+        # Get offsets of the original img3 to insert new data
+
+        tag_offset = self.getTagOffset(magic)
+
+        data_head = getBufferAtIndex(self.data, 0, tag_offset)
+
+        original_tag = self.getTagType(magic[::-1].decode())
+        original_len = original_tag['totalLength']
+
+        data_end = tag_offset + original_len
+
+        rest = len(self.data) - data_end
+        rest_data = getBufferAtIndex(self.data, data_end, rest)
+
+        self.data = data_head + final + rest_data
 
         # Update self.info and self.tags
 
-        self.info = self.readImg3()
-        self.tags = self.info['tags']
+        self.info = self.readImg3Head()
+        self.tags = self.readTags()
 
         self.updateHead()
 
-    def replaceData(self, data, aes_type=None):
-        magic = struct.unpack('<I', data[:4])[0]
+    def replaceData(self, data):
+        ident = self.info['ident'][::-1]
 
-        magic = magic.to_bytes(4, 'little')[::-1]
+        new_data = None
 
-        # kernel
-        feedface = b'\xfe\xed\xfa\xce'
-
-        # Applelogo / RecoveryMode (iBootIm)
-        iboot = b'iBoo'[::-1]
-
-        kbag_tag = self.getTagType('KBAG')
-        kbag_info = self.parseKBAG(kbag_tag)
-
-        if kbag_info:
-            aes_type = kbag_info['aes']
-
-        if aes_type is None:
-            raise Exception('Please select the AES type!')
-
-        if magic == feedface or magic == iboot:
-            if magic == feedface:
-                data = self.compressKernel(data)
-
-            # 3.0 / 3.0.1 have the last block
-            # of DATA unencrypted
-
-            if self.iv and self.key:
-                data_len = len(data)
-
-                toEncrypt = len(data) & ~0xF
-
-                lastBlock = data_len - toEncrypt
-
-                first = data[:toEncrypt]
-
-                second = data[-lastBlock:]
-
-                third = aes(
-                    'encrypt', aes_type, first, self.iv, self.key)
-
-                data = third + second
+        if ident == b'krnl':
+            new_data = self.handleKernelData(data)
 
         else:
-            if self.iv and self.key:
-                data = aes('encrypt', aes_type, data, self.iv, self.key)
+            pass
 
-        newDataTag = self.makeTag('DATA', data)
+        new_data_len = len(new_data)
 
-        self.writeTag(newDataTag)
+        aes_type = self.getAESType()
+
+        iv = self.iv
+        key = self.key
+
+        # TODO
+        # Figure out how xpwntool is managing to have a 25 byte padding...
+
+        padded = pad(new_data)
+        padded_len = len(padded)
+
+        pad_count = padded_len - new_data_len
+
+        encrypted = doAES('encrypt', aes_type, padded, iv, key)
+
+        # Remove padding
+
+        no_padding = getBufferAtIndex(encrypted, 0, padded_len - pad_count)
+
+        padding = getBufferAtIndex(encrypted, new_data_len, pad_count)
+
+        data_tag = self.makeTag('DATA', no_padding, padding)
+
+        self.writeTag(data_tag)
 
     def extractCertificate(self):
         cert_tag = self.getTagType('CERT')
@@ -543,11 +516,11 @@ class IMG3(Tag):
 
         bootstrap = b''.join(N88_BOOTSTRAP)
 
-        shellcode_to_bootstrap_dist = 0xfb0
+        padding_len = 0xfb0
 
         bootstrap_start = 0x24000
 
-        shellcode_start = bootstrap_start - shellcode_to_bootstrap_dist - shellcode_len
+        shellcode_start = bootstrap_start - padding_len - shellcode_len
 
         zeroes_after_cert = shellcode_start - cert_end
 
@@ -555,7 +528,7 @@ class IMG3(Tag):
             cert_data + cert_pad,
             b'\x00' * zeroes_after_cert,
             shellcode.replace(b'\xAA\xBB\xCC\xDD', dword),
-            b'\x00' * shellcode_to_bootstrap_dist,
+            b'\x00' * padding_len,
             bootstrap
         )
 

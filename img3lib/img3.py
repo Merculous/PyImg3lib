@@ -353,6 +353,25 @@ class IMG3(Tag):
             else:
                 return i
 
+    def getLengthOfDataAfterTag(self, magic):
+        sizeNoPack = self.info['sizeNoPack']
+
+        end = 0
+
+        for tag in self.tags:
+            tag_magic = tag['magic'][::-1].decode()
+
+            tag_size = tag['totalLength']
+
+            end += tag_size
+
+            if tag_magic == magic:
+                break
+
+        length_after_tag = sizeNoPack - end
+
+        return length_after_tag
+
     def writeTag(self, tag):
         magic = tag['magic']
 
@@ -385,13 +404,17 @@ class IMG3(Tag):
 
         data_head = getBufferAtIndex(self.data, 0, tag_offset)
 
+        # Get the original tag data
+
         original_tag = self.getTagType(magic[::-1].decode())
-        original_len = original_tag['totalLength']
 
-        data_end = tag_offset + original_len
+        data_end = tag_offset + original_tag['totalLength']
 
-        rest = len(self.data) - data_end
-        rest_data = getBufferAtIndex(self.data, data_end, rest)
+        end_len = self.getLengthOfDataAfterTag('DATA')
+
+        rest_data = getBufferAtIndex(self.data, data_end, end_len)
+
+        # Put the new data together
 
         self.data = data_head + final + rest_data
 

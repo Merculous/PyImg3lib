@@ -224,7 +224,7 @@ class IMG3(Tag):
 
         return blocks
 
-    def decrypt(self):
+    def decrypt(self, decompress=False):
         if self.iv is None:
             raise Exception('iv is not set!')
 
@@ -277,6 +277,12 @@ class IMG3(Tag):
             # Seems like padding is useless here
 
             final = decrypted + last_block
+
+        if decompress:
+            ident = self.info['ident'][::-1]
+
+            if ident == b'krnl':
+                final = self.handleKernelData(final)
 
         return final
 

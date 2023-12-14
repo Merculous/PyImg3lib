@@ -51,16 +51,7 @@ def main():
     elif args.d and args.o:
         data = None
 
-        data = img3file.decrypt()
-
-        if args.lzss:
-            # Applies to (de)compressed data
-            # Kernel only atm
-
-            # User is asking to also decompress
-            # kernel after decryption
-
-            data = img3file.handleKernelData(data)
+        data = img3file.decrypt(args.lzss)
 
         writeBinaryFile(args.o[0], data)
 

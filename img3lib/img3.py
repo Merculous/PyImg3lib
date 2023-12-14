@@ -380,6 +380,7 @@ class IMG3(Tag):
 
     def writeTag(self, tag):
         magic = tag['magic']
+        magic_str = magic[::-1].decode()
 
         tag_head = (
             magic,
@@ -412,11 +413,11 @@ class IMG3(Tag):
 
         # Get the original tag data
 
-        original_tag = self.getTagType(magic[::-1].decode())
+        original_tag = self.getTagType(magic_str)
 
         data_end = tag_offset + original_tag['totalLength']
 
-        end_len = self.getLengthOfDataAfterTag('DATA')
+        end_len = self.getLengthOfDataAfterTag(magic_str)
 
         rest_data = getBufferAtIndex(self.data, data_end, end_len)
 
@@ -523,12 +524,15 @@ class IMG3(Tag):
 
         data_tag = self.getTagType('DATA')
         data_tag_data = data_tag['data']
+        padding = data_tag['pad']
 
-        dword = data_tag_data[:4]
+        dword = getBufferAtIndex(data_tag_data, 0, 4)
 
-        data = data_tag_data[4:data_tag['dataLength']]
+        data = getBufferAtIndex(data_tag_data, 4, data_tag['dataLength'] - 4)
 
-        new_data_tag = self.makeTag('DATA', N88_SHELLCODE_ADDRESS + data)
+        patched_data = N88_SHELLCODE_ADDRESS + data
+
+        new_data_tag = self.makeTag('DATA', patched_data, padding)
 
         self.writeTag(new_data_tag)
 
@@ -563,7 +567,23 @@ class IMG3(Tag):
 
         patched_cert_data = b''.join(n8824k_data)
 
-        patched_cert_tag = self.makeTag('CERT', patched_cert_data)
+        # This data should already be padded?
+
+        patched_cert_tag = self.makeTag('CERT', patched_cert_data, b'')
+
+        # Check that CERT is the last tag
+
+        last_tag = self.tags[-1]
+        last_tag_magic = last_tag['magic'][::-1].decode()
+
+        if last_tag_magic != 'CERT':
+            raise Exception('Expected last tag to be CERT, but it is not!')
+
+        # Inject new CERT data so we can satisfy my writeTag()
+
+        self.tags[-1] = patched_cert_tag
+
+        self.updateHead()
 
         self.writeTag(patched_cert_tag)
 

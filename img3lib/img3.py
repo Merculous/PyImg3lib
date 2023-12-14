@@ -324,9 +324,6 @@ class IMG3(Tag):
                 elif kbag_info['dev'] is True:
                     kbag_type = 'dev'
 
-                else:
-                    pass
-
                 print(f'KBAG type: {kbag_type}')
                 print(f'AES: {kbag_info["aes"]}')
                 print(f'IV: {kbag_info["iv"]}')
@@ -441,7 +438,7 @@ class IMG3(Tag):
             new_data = self.handleKernelData(data)
 
         else:
-            pass
+            new_data = data
 
         new_data_len = len(new_data)
 

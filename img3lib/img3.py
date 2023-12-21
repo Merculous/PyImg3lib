@@ -1,12 +1,43 @@
 
 from .lzsscode import LZSS
-from .utils import doAES, formatData, getBufferAtIndex
+from .utils import doAES, formatData, getBufferAtIndex, pad, padNumber
 
 class Img3Tag:
     tag_head_size = 12
 
+    valid_tags = (
+        b'VERS', b'SEPO', b'SDOM',
+        b'PROD', b'CHIP', b'BORD',
+        b'KBAG', b'SHSH', b'CERT',
+        b'ECID', b'TYPE', b'DATA',
+        b'NONC', b'CEPO', b'OVRD',
+        b'RAND', b'SALT'
+    )
+
     def __init__(self):
         pass
+
+    def makeTag(self, magic, data):
+        if magic not in self.valid_tags:
+            raise Exception(f'Invalid magic: {magic}')
+
+        dataLength = len(data)
+
+        padding_len = padNumber(dataLength) - dataLength
+
+        padding = b'\x00' * padding_len
+
+        totalLength = self.tag_head_size + dataLength + padding_len
+
+        info = {
+            'magic': magic,
+            'totalLength': totalLength,
+            'dataLength': dataLength,
+            'data': data,
+            'pad': padding
+        }
+
+        return info
 
 
 class Img3Info(Img3Tag):
@@ -91,6 +122,13 @@ class Img3Getter(Img3Info):
             if kbag_type:
                 # Is release, not development
                 return aes_type
+
+    def getTagIndex(self, magic):
+        for i, tag in enumerate(self.tags):
+            tag_magic = tag['magic'][::-1]
+
+            if tag_magic == magic:
+                return i
 
 
 class Img3Reader(Img3Getter):
@@ -188,9 +226,58 @@ class Img3Modifier(Img3Extractor):
         super().__init__(data)
     
     def updateHead(self):
-        pass
+        sizeNoPack = 0
+        sigCheckArea = 0
 
-    def replaceTag(self):
+        tag_ignore = (b'CERT', b'SHSH')
+
+        for tag in self.tags:
+            tag_magic = tag['magic'][::-1]
+            totalLength = tag['totalLength']
+
+            sizeNoPack += totalLength
+
+            if tag_magic not in tag_ignore:
+                sigCheckArea += totalLength
+
+        fullSize = self.img3_head_size + sizeNoPack
+
+        self.head['fullSize'] = fullSize
+        self.head['sizeNoPack'] = sizeNoPack
+        self.head['sigCheckArea'] = sigCheckArea
+
+    def replaceTag(self, tag):
+        tag_magic = tag['magic']
+
+        tag_index = self.getTagIndex(tag_magic)
+
+        self.tags[tag_index] = tag
+
+        # Update img3 info with new tag
+
+        self.updateHead()
+
+    def replaceDATA(self, new_data):
+        original_tag = self.getTagWithMagic(b'DATA'[::-1])[0]
+
+        ident = self.head['ident'][::-1]
+
+        data = None
+
+        # FIXME
+        # padding
+
+        if ident == b'krnl':
+            lzss_obj = LZSS(new_data)
+            data = lzss_obj.go()
+
+        else:
+            pass
+
+        new_tag = self.makeTag(b'DATA', data)
+
+        self.replaceTag(new_tag)
+
         pass
 
 

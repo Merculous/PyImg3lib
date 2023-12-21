@@ -49,7 +49,14 @@ def main():
 
             writeBinaryFile(args.o[0], data)
 
-        pass
+        elif args.data:
+            # Replacing raw img3 data
+
+            new_data = readBinaryFile(args.data[0])
+
+            img3file.replaceDATA(new_data)
+
+            pass
 
     else:
         parser.print_help()

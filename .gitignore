@@ -7,3 +7,9 @@ kernelcache*
 work
 IPSW
 *.bin
+*.dmg
+*.plist
+.fseventsd
+*.img3
+*.dfu
+manifest

@@ -1,7 +1,7 @@
 
 from argparse import ArgumentParser
 
-from .img3 import IMG3
+from .img3 import Img3File
 from .utils import readBinaryFile, writeBinaryFile
 
 
@@ -31,37 +31,27 @@ def main():
     iv = args.iv[0] if args.iv else None
     key = args.k[0] if args.k else None
 
-    img3file = IMG3(in_data, iv, key)
+    img3file = Img3File(in_data, iv, key)
 
-    if args.data and args.o:
-        raw_data = readBinaryFile(args.data[0])
+    if args.o:
+        if args.d:
+            # Decryption
 
-        img3file.replaceData(raw_data)
+            decrypted = img3file.decrypt()
 
-        writeBinaryFile(args.o[0], img3file.data)
+            data = None
 
-    elif args.cert and args.o:
-        cert_data = img3file.extractCertificate()
+            if args.lzss:
+                data = img3file.decompress(decrypted)
 
-        writeBinaryFile(args.o[0], cert_data)
+            else:
+                data = decrypted
 
-    elif args.a:
-        img3file.printAllImg3Info()
+            writeBinaryFile(args.o[0], data)
 
-    elif args.d and args.o:
-        data = None
-
-        data = img3file.decrypt(args.lzss)
-
-        writeBinaryFile(args.o[0], data)
-
-    elif args.n8824k and args.o:
-        img3file.do3GSLLBHax()
-
-        writeBinaryFile(args.o[0], img3file.data)
+        pass
 
     else:
         parser.print_help()
-
 
 main()

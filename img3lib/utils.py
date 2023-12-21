@@ -53,10 +53,10 @@ def doAES(mode, aes_type, data, iv, key):
 
     cipher = AES.new(key, AES.MODE_CBC, iv)
 
-    if mode == 'encrypt':
+    if mode is True:
         data = cipher.encrypt(data)
 
-    elif mode == 'decrypt':
+    elif mode is False:
         data = cipher.decrypt(data)
 
     else:

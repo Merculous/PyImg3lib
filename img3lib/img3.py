@@ -30,7 +30,7 @@ class Img3Tag:
         totalLength = self.tag_head_size + dataLength + padding_len
 
         info = {
-            'magic': magic,
+            'magic': magic[::-1],
             'totalLength': totalLength,
             'dataLength': dataLength,
             'data': data,
@@ -103,7 +103,7 @@ class Img3Getter(Img3Info):
         tags = []
 
         for tag in self.tags:
-            tag_magic = tag['magic']
+            tag_magic = tag['magic'][::-1]
 
             if tag_magic == magic:
                 tags.append(tag)
@@ -111,7 +111,7 @@ class Img3Getter(Img3Info):
         return tags
 
     def getAESType(self):
-        kbag_tags = self.getTagWithMagic(b'KBAG'[::-1])
+        kbag_tags = self.getTagWithMagic(b'KBAG')
 
         for tag in kbag_tags:
             kbag_info = self.parseKBAGTag(tag)
@@ -125,7 +125,7 @@ class Img3Getter(Img3Info):
 
     def getTagIndex(self, magic):
         for i, tag in enumerate(self.tags):
-            tag_magic = tag['magic'][::-1]
+            tag_magic = tag['magic']
 
             if tag_magic == magic:
                 return i
@@ -141,6 +141,8 @@ class Img3Reader(Img3Getter):
 
         self.head = self.readHead()
         self.tags = self.readTags()
+
+        self.ident = self.head['ident'][::-1]
 
     def readHead(self):
         head_data = getBufferAtIndex(self.data, 0, self.img3_head_size)
@@ -218,12 +220,86 @@ class Img3Extractor(Img3Reader):
         pass
 
     def extractDATA(self):
+        tag = self.getTagWithMagic(b'DATA')[0]
+
+        data = tag['data']
+        padding = tag['pad']
+
+        block1, block2 = self.getDATABlocks(data)
+        tag_data = (block1, block2, padding)
+
+        return tag_data
+
+
+class Img3Crypt(Img3Extractor):
+    def __init__(self, data, iv=None, key=None):
+        super().__init__(data)
+
+        self.iv = iv
+        self.key = key
+
+        self.aes_type = self.getAESType()
+
+        if self.aes_type not in self.aes_supported:
+            raise Exception(f'Unknown AES type: {self.aes_type}')
+
+        self.key_len = self.aes_supported[self.aes_type]
+
+        self.crypt_data = self.extractDATA()
+
+        self.padding_encrypted = self.determinePaddingEncryption()
+
+    def determinePaddingEncryption(self):
+        padding = self.crypt_data[2]
+        padding_len = len(padding)
+
+        zeroed_padding = b'\x00' * padding_len
+
+        if padding == zeroed_padding:
+            return False
+        
+        return True
+
+    def decrypt(self):
+        block1, block2, padding = self.crypt_data
+
+        block1_len = len(block1)
+        block2_len = len(block2)
+
+        padding_len = len(padding)
+
+        total_len = block1_len + block2_len + padding_len
+
+        remove_padding = False
+
+        to_decrypt = None
+
+        if self.padding_encrypted:
+            to_decrypt = block1 + block2 + padding
+
+            remove_padding = True
+
+        else:
+            # Padding is irrelevant (for now)?
+            to_decrypt = block1
+
+        decrypted = doAES(False, self.aes_type, to_decrypt, self.iv, self.key)
+
+        if remove_padding:
+            # Padding was previously encrypted.
+            # Now that we decrypted, we need to remove it.
+
+            decrypted = getBufferAtIndex(decrypted, 0, total_len - padding_len)
+
+        return decrypted
+
+    def encrypt(self):
         pass
 
 
-class Img3Modifier(Img3Extractor):
-    def __init__(self, data):
-        super().__init__(data)
+class Img3Modifier(Img3Crypt):
+    def __init__(self, data, iv=None, key=None):
+        super().__init__(data, iv, key)
     
     def updateHead(self):
         sizeNoPack = 0
@@ -258,88 +334,19 @@ class Img3Modifier(Img3Extractor):
         self.updateHead()
 
     def replaceDATA(self, new_data):
-        original_tag = self.getTagWithMagic(b'DATA'[::-1])[0]
+        new_tag = self.makeTag(b'DATA', new_data)
 
-        ident = self.head['ident'][::-1]
-
-        data = None
-
-        # FIXME
-        # padding
-
-        if ident == b'krnl':
-            lzss_obj = LZSS(new_data)
-            data = lzss_obj.go()
-
-        else:
-            pass
-
-        new_tag = self.makeTag(b'DATA', data)
+        # Inject our new tag
 
         self.replaceTag(new_tag)
+
+        # Encrypt the data tag
+
+        self.encrypt()
 
         pass
 
 
 class Img3File(Img3Modifier):
     def __init__(self, data, iv=None, key=None):
-        super().__init__(data)
-
-        self.iv = iv
-        self.key = key
-
-        self.aes_type = self.getAESType()
-
-    def decrypt(self):
-        data_tag = self.getTagWithMagic(b'DATA'[::-1])[0]
-
-        data = data_tag['data']
-
-        padding = data_tag['pad']
-        padding_len = len(padding)
-
-        # Figure out if we need to decrypt data + padding
-
-        zeroed_padding = b'\x00' * padding_len
-
-        padding_encrypted = True if padding != zeroed_padding else False
-
-        # Start decryption
-
-        data_blocks = self.getDATABlocks(data)
-
-        iv = self.iv
-        key = self.key
-
-        final = None
-        decrypted = None
-
-        if padding_encrypted:
-            pass
-
-        else:
-            decrypted = doAES(False, self.aes_type, data_blocks[0], iv, key)
-
-            # 3.0.x seem to not include padding after decryption
-
-            final = decrypted + data_blocks[1]
-
-        return final
-
-    def encrypt(self):
-        pass
-
-    def decompress(self, data):
-        # Only for kernel data atm
-
-        if self.head['ident'] != b'krnl'[::-1]:
-            raise Exception('Decompression only for kernel atm!')
-
-        lzss_obj = LZSS(data)
-
-        decompressed_data = lzss_obj.go()
-
-        return decompressed_data
-
-    def compress(self):
-        pass
+        super().__init__(data, iv, key)

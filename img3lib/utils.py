@@ -17,7 +17,7 @@ def writeBinaryFile(path, data):
         f.write(data)
 
 
-def doAES(mode, aes_type, data, iv, key):
+def doAES(encrypt, aes_type, data, iv, key):
     if isinstance(aes_type, str):
         aes_type = int(aes_type)
 
@@ -53,14 +53,14 @@ def doAES(mode, aes_type, data, iv, key):
 
     cipher = AES.new(key, AES.MODE_CBC, iv)
 
-    if mode is True:
+    if encrypt is True:
         data = cipher.encrypt(data)
 
-    elif mode is False:
+    elif encrypt is False:
         data = cipher.decrypt(data)
 
     else:
-        raise Exception(f'Unknown mode: {mode}')
+        raise Exception(f'Unknown mode: {encrypt}')
 
     return data
 

@@ -2,6 +2,7 @@
 from argparse import ArgumentParser
 
 from .img3 import Img3File
+from .lzsscode import LZSS
 from .utils import readBinaryFile, writeBinaryFile
 
 
@@ -42,19 +43,24 @@ def main():
             data = None
 
             if args.lzss:
-                data = img3file.decompress(decrypted)
-
+                data = LZSS(decrypted).go()
             else:
                 data = decrypted
 
             writeBinaryFile(args.o[0], data)
 
         elif args.data:
-            # Replacing raw img3 data
+            data = readBinaryFile(args.data[0])
 
-            new_data = readBinaryFile(args.data[0])
+            to_write = None
 
-            img3file.replaceDATA(new_data)
+            if args.lzss:
+                to_write = LZSS(data).go()
+
+            else:
+                to_write = data
+
+            img3file.replaceDATA(to_write)
 
             pass
 

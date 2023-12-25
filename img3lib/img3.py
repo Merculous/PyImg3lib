@@ -320,14 +320,59 @@ class Img3Crypt(Img3Extractor):
 
         return decrypted
 
-    def encrypt(self):
-        pass
+    def encrypt(self, data):
+        tag = self.makeTag(b'DATA', data)
+
+        block1, block2 = self.getDATABlocks(tag['data'])
+
+        padding = tag['pad']
+
+        to_encrypt = None
+        remove_padding = False
+
+        if self.padding_encrypted:
+            remove_padding = True
+
+            pass
+
+        else:
+            # Encrypting only block1.
+            # Add block2 after encryption
+            to_encrypt = block1
+
+        # Get KBAG iv and key to encrypt
+
+        kbag_tag = self.getTagWithMagic(b'KBAG')[0]
+
+        kbag_info = self.parseKBAGTag(kbag_tag)
+
+        # Make sure to encrypt with release and not dev keys
+
+        if not kbag_info['release']:
+            raise Exception('First KBAG is likely dev!')
+        
+        iv = kbag_info['iv']
+        key = kbag_info['key']
+
+        # Start encryption
+
+        encrypted = doAES(True, self.aes_type, to_encrypt, iv, key)
+
+        if remove_padding:
+            pass
+
+        else:
+            encrypted += block2
+
+        return encrypted
 
 
 class Img3Modifier(Img3Crypt):
     def __init__(self, data, iv=None, key=None):
         super().__init__(data, iv, key)
     
+        self.new_data = None
+
     def updateHead(self):
         sizeNoPack = 0
         sigCheckArea = 0
@@ -349,6 +394,34 @@ class Img3Modifier(Img3Crypt):
         self.head['sizeNoPack'] = sizeNoPack
         self.head['sigCheckArea'] = sigCheckArea
 
+    def updateImg3Data(self):
+        # FIXME
+        # TODO
+        # Size checking
+
+        head = [v for k, v in self.head.items()]
+
+        head_format = formatData('>4s3I4s', head)
+
+        new_data = head_format
+
+        for tag in self.tags:
+            tag_head = (
+                tag['magic'],
+                tag['totalLength'],
+                tag['dataLength']
+            )
+
+            tag_head_format = formatData('>4s2I', tag_head)
+
+            tag_head_format += tag['data']
+
+            tag_head_format += tag['pad']
+
+            new_data += tag_head_format
+
+        return new_data
+
     def replaceTag(self, tag):
         tag_magic = tag['magic']
 
@@ -361,29 +434,21 @@ class Img3Modifier(Img3Crypt):
         self.updateHead()
 
     def replaceDATA(self, new_data):
-        ident = self.ident
+        # This would work like replaceTag(), but
+        # this function is supposed to replace data
+        # that you'd want to write to a new file.
 
-        data = None
+        tag = self.makeTag(b'DATA', new_data)
 
-        if ident == b'krnl':
-            data = LZSS(new_data).go()
+        self.replaceTag(tag)
 
-        else:
-            data = new_data
+        self.updateHead()
 
-        blocks = None
+        # Update the img3 data with new DATA
 
-        if self.padding_encrypted:
-            pass
-
-        else:
-            pass
-
-        pass
+        self.updateImg3Data()
 
 
 class Img3File(Img3Modifier):
     def __init__(self, data, iv=None, key=None):
         super().__init__(data, iv, key)
-
-        pass

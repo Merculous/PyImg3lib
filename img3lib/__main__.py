@@ -48,6 +48,23 @@ def main():
 
                 writeBinaryFile(args.o[0], data)
 
+        if not args.iv and not args.k:
+            if not args.d and args.data and args.o:
+                data = readBinaryFile(args.data[0])
+
+                to_encrypt = None
+
+                if args.lzss:
+                    to_encrypt = LZSS(data).go()
+
+                encrypted = img3file.encrypt(to_encrypt)
+
+                img3file.replaceDATA(encrypted)
+
+                new_img3 = img3file.updateImg3Data()
+
+                writeBinaryFile(args.o[0], new_img3)
+
     else:
         parser.print_help()
 

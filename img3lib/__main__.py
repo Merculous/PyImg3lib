@@ -48,7 +48,6 @@ def main():
 
                 writeBinaryFile(args.o[0], data)
 
-        if not args.iv and not args.k:
             if not args.d and args.data and args.o:
                 data = readBinaryFile(args.data[0])
 

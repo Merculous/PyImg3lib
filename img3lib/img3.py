@@ -321,6 +321,12 @@ class Img3Crypt(Img3Extractor):
         return decrypted
 
     def encrypt(self, data):
+        if not self.iv:
+            raise Exception('Iv missing!')
+
+        if not self.key:
+            raise Exception('Key missing!')
+
         tag = self.makeTag(b'DATA', data)
 
         block1, block2 = self.getDATABlocks(tag['data'])
@@ -339,24 +345,10 @@ class Img3Crypt(Img3Extractor):
             # Encrypting only block1.
             # Add block2 after encryption
             to_encrypt = block1
-
-        # Get KBAG iv and key to encrypt
-
-        kbag_tag = self.getTagWithMagic(b'KBAG')[0]
-
-        kbag_info = self.parseKBAGTag(kbag_tag)
-
-        # Make sure to encrypt with release and not dev keys
-
-        if not kbag_info['release']:
-            raise Exception('First KBAG is likely dev!')
         
-        iv = kbag_info['iv']
-        key = kbag_info['key']
-
         # Start encryption
 
-        encrypted = doAES(True, self.aes_type, to_encrypt, iv, key)
+        encrypted = doAES(True, self.aes_type, to_encrypt, self.iv, self.key)
 
         if remove_padding:
             pass

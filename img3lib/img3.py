@@ -310,6 +310,14 @@ class Img3Crypt(Img3Extractor):
 
             decrypted = getBufferAtIndex(decrypted, 0, total_len - padding_len)
 
+        else:
+            # TODO Check if this code is good.
+            
+            # If the padding was encrypted, we need to remove it for compression.
+            # If it was not, then we need to add block2 data as we only decrypted
+            # block1.
+            decrypted += block2
+
         return decrypted
 
     def encrypt(self):

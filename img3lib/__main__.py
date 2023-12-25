@@ -48,10 +48,6 @@ def main():
 
                 writeBinaryFile(args.o[0], data)
 
-                pass
-
-        pass
-
     else:
         parser.print_help()
 

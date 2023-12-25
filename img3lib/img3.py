@@ -401,7 +401,7 @@ class Img3Modifier(Img3Crypt):
 
         head = [v for k, v in self.head.items()]
 
-        head_format = formatData('>4s3I4s', head)
+        head_format = formatData('<4s3I4s', head)
 
         new_data = head_format
 
@@ -412,7 +412,7 @@ class Img3Modifier(Img3Crypt):
                 tag['dataLength']
             )
 
-            tag_head_format = formatData('>4s2I', tag_head)
+            tag_head_format = formatData('<4s2I', tag_head)
 
             tag_head_format += tag['data']
 

@@ -54,11 +54,19 @@ class Img3Info(Img3Tag):
         data_len = len(data)
 
         block1_len = data_len & ~0xF
+        block1_data = getBufferAtIndex(data, 0, block1_len)
+
         block2_len = data_len & 0xF
+        block2_data = None
+
+        # block2_len can be 0
+
+        if block2_len != 0:
+            block2_data = getBufferAtIndex(data, block1_len, block2_len)
 
         blocks = (
-            getBufferAtIndex(data, 0, block1_len),
-            getBufferAtIndex(data, block1_len, block2_len)
+            block1_data,
+            block2_data
         )
 
         return blocks
@@ -225,6 +233,11 @@ class Img3Extractor(Img3Reader):
         data = tag['data']
         padding = tag['pad']
 
+        # Padding can be 0 / empty
+
+        if not padding:
+            padding = None
+
         block1, block2 = self.getDATABlocks(data)
         tag_data = (block1, block2, padding)
 
@@ -251,6 +264,11 @@ class Img3Crypt(Img3Extractor):
 
     def determinePaddingEncryption(self):
         padding = self.crypt_data[2]
+
+        if not padding:
+            # No padding
+            return False
+
         padding_len = len(padding)
 
         zeroed_padding = b'\x00' * padding_len
@@ -264,9 +282,10 @@ class Img3Crypt(Img3Extractor):
         block1, block2, padding = self.crypt_data
 
         block1_len = len(block1)
-        block2_len = len(block2)
 
-        padding_len = len(padding)
+        block2_len = 0 if not block2 else len(block2)
+
+        padding_len = 0 if not padding else len(padding)
 
         total_len = block1_len + block2_len + padding_len
 
@@ -334,15 +353,23 @@ class Img3Modifier(Img3Crypt):
         self.updateHead()
 
     def replaceDATA(self, new_data):
-        new_tag = self.makeTag(b'DATA', new_data)
+        ident = self.ident
 
-        # Inject our new tag
+        data = None
 
-        self.replaceTag(new_tag)
+        if ident == b'krnl':
+            data = LZSS(new_data).go()
 
-        # Encrypt the data tag
+        else:
+            data = new_data
 
-        self.encrypt()
+        blocks = None
+
+        if self.padding_encrypted:
+            pass
+
+        else:
+            pass
 
         pass
 
@@ -350,3 +377,5 @@ class Img3Modifier(Img3Crypt):
 class Img3File(Img3Modifier):
     def __init__(self, data, iv=None, key=None):
         super().__init__(data, iv, key)
+
+        pass

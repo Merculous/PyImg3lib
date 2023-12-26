@@ -262,6 +262,8 @@ class Img3Crypt(Img3Extractor):
 
         self.padding_encrypted = self.determinePaddingEncryption()
 
+        self.encrypted_truncate = 0
+
     def determinePaddingEncryption(self):
         padding = self.crypt_data[2]
 
@@ -339,7 +341,7 @@ class Img3Crypt(Img3Extractor):
         if self.padding_encrypted:
             remove_padding = True
 
-            pass
+            to_encrypt = block1 + block2 + padding
 
         else:
             # Encrypting only block1.
@@ -351,7 +353,7 @@ class Img3Crypt(Img3Extractor):
         encrypted = doAES(True, self.aes_type, to_encrypt, self.iv, self.key)
 
         if remove_padding:
-            pass
+            self.encrypted_truncate = len(padding)
 
         else:
             encrypted += block2
@@ -467,6 +469,19 @@ class Img3Modifier(Img3LZSS):
         # that you'd want to write to a new file.
 
         tag = self.makeTag(b'DATA', new_data)
+
+        if self.encrypted_truncate != 0:
+            # FIXME
+            # This code is crappy but is a quick fix for padding.
+            # dataLength doesn't have to be 16 byte aligned, so this'll change
+            # the values below, so that I don't have to modify how functions
+            # operate, for now, idk yet.
+
+            tag_data = tag['data']
+
+            tag['dataLength'] -= self.encrypted_truncate
+            tag['data'] = getBufferAtIndex(tag_data, 0, tag['dataLength'])
+            tag['pad'] = getBufferAtIndex(tag_data, tag['dataLength'], self.encrypted_truncate)
 
         self.replaceTag(tag)
 

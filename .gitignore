@@ -13,3 +13,5 @@ IPSW
 *.img3
 *.dfu
 manifest
+*.bbfw
+Firmware

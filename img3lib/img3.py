@@ -359,7 +359,43 @@ class Img3Crypt(Img3Extractor):
         return encrypted
 
 
-class Img3Modifier(Img3Crypt):
+class Img3LZSS(Img3Crypt):
+    def __init__(self, data, iv=None, key=None):
+        super().__init__(data, iv, key)
+
+        self.lzss_obj = None
+
+    def getLZSSVersion(self, data):
+        i = self.lzss_obj.lzss_head - 4
+
+        version_raw = getBufferAtIndex(data, i, 4)
+
+        version_format = formatData('>I', version_raw, False)[0]
+
+        return version_format
+
+    def handleKernelData(self, data):
+        # Decrypt to get the kernel version
+
+        decrypted = self.decrypt()
+
+        # Setup LZSS object
+
+        self.lzss_obj = LZSS(decrypted)
+
+        version = self.getLZSSVersion(decrypted)
+
+        self.lzss_obj.version = version
+
+        # Change lzss.data with our actual data
+
+        self.lzss_obj.data = data
+
+        output = self.lzss_obj.go()
+
+        return output
+
+class Img3Modifier(Img3LZSS):
     def __init__(self, data, iv=None, key=None):
         super().__init__(data, iv, key)
     

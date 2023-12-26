@@ -11,9 +11,9 @@ class LZSS:
 
     def __init__(self, data) -> None:
         self.data = data
-        self.data_len = len(self.data)
 
-        self.mode = self.determineMode()
+        self.mode = None
+        self.version = None
 
     def determineMode(self):
         buffer = getBufferAtIndex(self.data, 0, 8)
@@ -47,14 +47,10 @@ class LZSS:
             b'comp',
             b'lzss',
             getKernelChecksum(self.data),
-            self.data_len,
+            len(self.data),
             compressed_len,
-            0
+            self.version
         )
-
-        # iOS 3.1.3 version is 0
-
-        # Others can be 1
 
         head = formatData('>4s4s4I', to_pack)
 
@@ -82,13 +78,15 @@ class LZSS:
             version
         ) = formatData('>4s4s4I', head, False)
 
+        self.version = version
+
         if signature != b'comp':
             raise Exception('Signature is not comp!')
 
         if compression_type != b'lzss':
             raise Exception('Compression is not lzss!')
 
-        expected_len = self.data_len - self.lzss_end
+        expected_len = len(self.data) - self.lzss_end
 
         if expected_len != compressed_len:
             raise Exception('Compressed length does not match!')
@@ -114,6 +112,8 @@ class LZSS:
 
     def go(self):
         data = None
+
+        self.mode = self.determineMode()
 
         if self.mode == 'compress':
             data = self.compress()

@@ -54,7 +54,7 @@ def main():
                 to_encrypt = None
 
                 if args.lzss:
-                    to_encrypt = LZSS(data).go()
+                    to_encrypt = img3file.handleKernelData(data)
 
                 encrypted = img3file.encrypt(to_encrypt)
 

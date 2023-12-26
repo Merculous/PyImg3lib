@@ -2,7 +2,6 @@
 from argparse import ArgumentParser
 
 from .img3 import Img3File
-from .lzsscode import LZSS
 from .utils import readBinaryFile, writeBinaryFile
 
 
@@ -42,7 +41,7 @@ def main():
                 decrypted = img3file.decrypt()
 
                 if args.lzss:
-                    data = LZSS(decrypted).go()
+                    data = img3file.handleKernelData(decrypted)
                 else:
                     data = decrypted
 

@@ -1,4 +1,5 @@
 
+from .kpwn import N88_BOOTSTRAP, N88_SHELLCODE, N88_SHELLCODE_ADDRESS
 from .lzsscode import LZSS
 from .utils import doAES, formatData, getBufferAtIndex, pad, padNumber
 
@@ -18,6 +19,10 @@ class Img3Tag:
         pass
 
     def makeTag(self, magic, data):
+        # FIXME
+        # Sometimes padding gets in the way as some data
+        # doesn't need to be multiple of 16.
+
         if magic not in self.valid_tags:
             raise Exception(f'Invalid magic: {magic}')
 
@@ -101,6 +106,8 @@ class Img3Info(Img3Tag):
 
 
 class Img3Getter(Img3Info):
+    img3_head_size = 20
+
     def __init__(self):
         super().__init__()
 
@@ -137,11 +144,21 @@ class Img3Getter(Img3Info):
 
             if tag_magic == magic:
                 return i
+            
+    def getPositionOfTag(self, magic):
+        pos = self.img3_head_size
 
+        for tag in self.tags:
+            size = tag['totalLength']
+
+            if tag['magic'][::-1] != magic:
+                pos += size
+            else:
+                break
+
+        return pos
 
 class Img3Reader(Img3Getter):
-    img3_head_size = 20
-
     def __init__(self, data):
         super().__init__()
 
@@ -495,3 +512,96 @@ class Img3Modifier(Img3LZSS):
 class Img3File(Img3Modifier):
     def __init__(self, data, iv=None, key=None):
         super().__init__(data, iv, key)
+
+    def do24KPWN(self):
+        type_tag = self.getTagWithMagic(b'TYPE')[0]
+        data_tag = self.getTagWithMagic(b'DATA')[0]
+        cert_tag = self.getTagWithMagic(b'CERT')[0]
+
+        # Update first 4 bytes of DATA with shellcode address
+
+        data_tag_data = data_tag['data']
+        data_tag_data_len = data_tag['dataLength']
+
+        data_tag_dword = getBufferAtIndex(data_tag_data, 0, 4)
+        data_tag_rest = getBufferAtIndex(data_tag_data, 4, data_tag_data_len - 4)
+
+        new_data = N88_SHELLCODE_ADDRESS + data_tag_rest
+
+        # Replace data tag with the modified
+
+        new_data_tag = self.makeTag(b'DATA', new_data)
+
+        self.replaceTag(new_data_tag)
+
+        if len(new_data) != data_tag_data_len:
+            raise Exception('New data length mismatch!')
+
+        # Begin CERT modification
+
+        cert_len = cert_tag['totalLength']
+        cert_data = cert_tag['data']
+        cert_pad = cert_tag['pad']
+
+        cert_start = self.getPositionOfTag(b'CERT')
+        cert_end = cert_start + cert_len
+
+        shellcode = b''.join(N88_SHELLCODE)
+        bootstrap = b''.join(N88_BOOTSTRAP)
+
+        padding = b'\x00' * 0xfb0
+        bootstrap_start = 0x24000
+
+        shellcode_start = bootstrap_start - len(padding) - len(shellcode)
+
+        zeroes_after_cert = b'\x00' * (shellcode_start - cert_end)
+
+        # Put our 24kpwn data together
+
+        n8824k_data = (
+            cert_data + cert_pad,
+            zeroes_after_cert,
+            shellcode.replace(b'\xAA\xBB\xCC\xDD', data_tag_dword),
+            padding,
+            bootstrap
+        )
+
+        n8824k_data = b''.join(n8824k_data)
+
+        # Replace CERT
+
+        n8824k_cert_tag = self.makeTag(b'CERT', n8824k_data)
+
+        # FIXME
+        # Remove padding
+
+        n8824k_cert_tag_pad_len = len(n8824k_cert_tag['pad'])
+        
+        n8824k_cert_tag['totalLength'] -= n8824k_cert_tag_pad_len
+
+        n8824k_cert_tag['pad'] = b''
+
+        self.replaceTag(n8824k_cert_tag)
+
+        # Replace TYPE padding with zeroes cause this is what xpwntool does.
+        # Also just to produce exact LLB's.
+        
+        type_tag_pad_len = len(type_tag['pad'])
+
+        type_tag_zeroed_padding = b'\x00' * type_tag_pad_len
+
+        type_tag['pad'] = type_tag_zeroed_padding
+
+        self.replaceTag(type_tag)
+
+        pwned_data = self.updateImg3Data()
+        pwned_data_len = len(pwned_data)
+
+        # Check that n8824k_data is the correct size
+
+        n8824k_expected_size = 0x241d0
+
+        if pwned_data_len != n8824k_expected_size:
+            raise Exception(f'n8824k data size mismatch! Size: {hex(pwned_data_len)}!')
+        
+        return pwned_data

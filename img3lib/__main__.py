@@ -63,6 +63,11 @@ def main():
 
                 writeBinaryFile(args.o[0], new_img3)
 
+        elif args.n8824k and args.o:
+            pwned_llb = img3file.do24KPWN()
+
+            writeBinaryFile(args.o[0], pwned_llb)
+
     else:
         parser.print_help()
 

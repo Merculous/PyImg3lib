@@ -1,7 +1,10 @@
 
+from binascii import hexlify
+
 from .kpwn import N88_BOOTSTRAP, N88_SHELLCODE, N88_SHELLCODE_ADDRESS
 from .lzsscode import LZSS
-from .utils import doAES, formatData, getBufferAtIndex, pad, padNumber
+from .utils import doAES, formatData, getBufferAtIndex, padNumber
+
 
 class Img3Tag:
     tag_head_size = 12
@@ -144,7 +147,7 @@ class Img3Getter(Img3Info):
 
             if tag_magic == magic:
                 return i
-            
+
     def getPositionOfTag(self, magic):
         pos = self.img3_head_size
 
@@ -157,6 +160,7 @@ class Img3Getter(Img3Info):
                 break
 
         return pos
+
 
 class Img3Reader(Img3Getter):
     def __init__(self, data):
@@ -220,7 +224,7 @@ class Img3Reader(Img3Getter):
         }
 
         return info
-    
+
     def readTags(self):
         fullSize = self.head['fullSize']
 
@@ -242,7 +246,11 @@ class Img3Extractor(Img3Reader):
         super().__init__(data)
 
     def extractCertificate(self):
-        pass
+        cert_tag = self.getTagWithMagic(b'CERT')[0]
+
+        data = cert_tag['data']
+
+        return data
 
     def extractDATA(self):
         tag = self.getTagWithMagic(b'DATA')[0]
@@ -294,7 +302,7 @@ class Img3Crypt(Img3Extractor):
 
         if padding == zeroed_padding:
             return False
-        
+
         return True
 
     def decrypt(self):
@@ -331,10 +339,10 @@ class Img3Crypt(Img3Extractor):
 
         else:
             # TODO Check if this code is good.
-            
-            # If the padding was encrypted, we need to remove it for compression.
-            # If it was not, then we need to add block2 data as we only decrypted
-            # block1.
+
+            # If the padding was encrypted, we need to remove it
+            # for compression. If it was not, then we need to add
+            # block2 data as we only decrypted block1.
             decrypted += block2
 
         return decrypted
@@ -364,7 +372,7 @@ class Img3Crypt(Img3Extractor):
             # Encrypting only block1.
             # Add block2 after encryption
             to_encrypt = block1
-        
+
         # Start encryption
 
         encrypted = doAES(True, self.aes_type, to_encrypt, self.iv, self.key)
@@ -414,10 +422,11 @@ class Img3LZSS(Img3Crypt):
 
         return output
 
+
 class Img3Modifier(Img3LZSS):
     def __init__(self, data, iv=None, key=None):
         super().__init__(data, iv, key)
-    
+
         self.new_data = None
 
     def updateHead(self):
@@ -498,7 +507,8 @@ class Img3Modifier(Img3LZSS):
 
             tag['dataLength'] -= self.encrypted_truncate
             tag['data'] = getBufferAtIndex(tag_data, 0, tag['dataLength'])
-            tag['pad'] = getBufferAtIndex(tag_data, tag['dataLength'], self.encrypted_truncate)
+            tag['pad'] = getBufferAtIndex(
+                tag_data, tag['dataLength'], self.encrypted_truncate)
 
         self.replaceTag(tag)
 
@@ -524,7 +534,8 @@ class Img3File(Img3Modifier):
         data_tag_data_len = data_tag['dataLength']
 
         data_tag_dword = getBufferAtIndex(data_tag_data, 0, 4)
-        data_tag_rest = getBufferAtIndex(data_tag_data, 4, data_tag_data_len - 4)
+        data_tag_rest = getBufferAtIndex(
+            data_tag_data, 4, data_tag_data_len - 4)
 
         new_data = N88_SHELLCODE_ADDRESS + data_tag_rest
 
@@ -576,7 +587,7 @@ class Img3File(Img3Modifier):
         # Remove padding
 
         n8824k_cert_tag_pad_len = len(n8824k_cert_tag['pad'])
-        
+
         n8824k_cert_tag['totalLength'] -= n8824k_cert_tag_pad_len
 
         n8824k_cert_tag['pad'] = b''
@@ -585,7 +596,7 @@ class Img3File(Img3Modifier):
 
         # Replace TYPE padding with zeroes cause this is what xpwntool does.
         # Also just to produce exact LLB's.
-        
+
         type_tag_pad_len = len(type_tag['pad'])
 
         type_tag_zeroed_padding = b'\x00' * type_tag_pad_len
@@ -602,6 +613,78 @@ class Img3File(Img3Modifier):
         n8824k_expected_size = 0x241d0
 
         if pwned_data_len != n8824k_expected_size:
-            raise Exception(f'n8824k data size mismatch! Size: {hex(pwned_data_len)}!')
-        
+            raise Exception(
+                f'n8824k data size mismatch! Size: {hex(pwned_data_len)}!')
+
         return pwned_data
+
+    def printImg3Info(self):
+        head = self.head
+
+        for k, v in head.items():
+            if isinstance(v, bytes):
+                # Reverse img3 magic and ident
+                v = v[::-1].decode('utf-8')
+
+            print(f'{k}: {v}')
+
+        tags = self.tags
+
+        current_tag = None
+
+        ignore = ('TYPE', 'DATA')
+
+        for tag in tags:
+            for k, v in tag.items():
+                if k == 'magic':
+                    v = v[::-1].decode('utf-8')
+
+                    current_tag = v
+
+                    print(f'Tag: {current_tag}')
+
+                elif k == 'data':
+                    if current_tag in ignore:
+                        continue
+
+                    if current_tag == 'VERS':
+                        str_len = formatData('<I', v[:4], False)[0]
+                        _str = getBufferAtIndex(v, 4, str_len).decode('utf-8')
+
+                        print(f'Str length: {str_len}')
+                        print(_str)
+
+                    elif current_tag == 'SEPO':
+                        sepo = formatData('<I', v, False)[0]
+
+                        print(f'SEPO: {sepo}')
+
+                    elif current_tag == 'CHIP':
+                        chip = formatData('<I', v, False)[0]
+
+                        print(f'Chip: {chip}')
+
+                    elif current_tag == 'BORD':
+                        bord = formatData('<I', v, False)[0]
+
+                        print(f'Bord: {bord}')
+
+                    elif current_tag == 'KBAG':
+                        kbag_info = self.parseKBAGTag(tag)
+
+                        print(f'Release: {kbag_info["release"]}')
+                        print(f'AES: {kbag_info["aes_type"]}')
+
+                        iv = hexlify(kbag_info['iv']).decode('utf-8')
+                        key = hexlify(kbag_info['key']).decode('utf-8')
+
+                        print(f'Iv: {iv}')
+                        print(f'Key: {key}')
+
+                elif k == 'pad':
+                    pad_len = len(v)
+
+                    print(f'Padding: {pad_len}')
+
+                else:
+                    print(f'{k}: {v}')

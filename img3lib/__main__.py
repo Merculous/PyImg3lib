@@ -14,7 +14,6 @@ def main():
     parser.add_argument('--data', nargs=1)
 
     parser.add_argument('-a', action='store_true')
-    parser.add_argument('-c', action='store_true')
     parser.add_argument('-d', action='store_true')
 
     parser.add_argument('--cert', action='store_true')
@@ -68,7 +67,16 @@ def main():
 
             writeBinaryFile(args.o[0], pwned_llb)
 
+        elif args.cert and args.o:
+            cert_data = img3file.extractCertificate()
+
+            writeBinaryFile(args.o[0], cert_data)
+
+        elif args.a:
+            img3file.printImg3Info()
+
     else:
         parser.print_help()
+
 
 main()

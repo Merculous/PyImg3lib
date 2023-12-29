@@ -343,7 +343,9 @@ class Img3Crypt(Img3Extractor):
             # If the padding was encrypted, we need to remove it
             # for compression. If it was not, then we need to add
             # block2 data as we only decrypted block1.
-            decrypted += block2
+
+            if block2:
+                decrypted += block2
 
         return decrypted
 
@@ -381,7 +383,8 @@ class Img3Crypt(Img3Extractor):
             self.encrypted_truncate = len(padding)
 
         else:
-            encrypted += block2
+            if block2:
+                encrypted += block2
 
         return encrypted
 

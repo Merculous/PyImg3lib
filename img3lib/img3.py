@@ -514,7 +514,8 @@ class Img3Modifier(Img3LZSS):
 
         # Update the img3 data with new DATA
 
-        self.updateImg3Data()
+        new_img3 = self.updateImg3Data()
+        return new_img3
 
 
 class Img3File(Img3Modifier):

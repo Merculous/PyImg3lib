@@ -39,10 +39,6 @@ class LZSS:
         compressed = lzss.compress(self.data)
         compressed_len = len(compressed)
 
-        # FIXME
-        # Correct version as I know for sure I can have it
-        # passed to here.
-
         to_pack = (
             b'comp',
             b'lzss',

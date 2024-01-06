@@ -12,6 +12,7 @@ def main():
     parser.add_argument('-o', nargs=1)
 
     parser.add_argument('--data', nargs=1)
+    parser.add_argument('--diff', nargs=1)
 
     parser.add_argument('-a', action='store_true')
     parser.add_argument('-d', action='store_true')
@@ -53,6 +54,8 @@ def main():
 
                 if args.lzss:
                     to_encrypt = img3file.handleKernelData(data)
+                else:
+                    to_encrypt = data
 
                 encrypted = img3file.encrypt(to_encrypt)
 
@@ -74,6 +77,13 @@ def main():
 
         elif args.a:
             img3file.printImg3Info()
+
+        elif args.diff:
+            data = readBinaryFile(args.diff[0])
+
+            new_img3 = Img3File(data)
+
+            img3file.findDifferences(new_img3)
 
     else:
         parser.print_help()

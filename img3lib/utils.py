@@ -110,20 +110,18 @@ def formatData(format, data, pack=True):
     return formatted_data
 
 
-def padNumber(n):
-    n_padded = n
-
-    while n_padded % 16 != 0:
-        n_padded += 1
-
-    return n_padded
-
-
-def pad(data):
+def pad(padSize, data):
     data_len = len(data)
 
-    padding = padNumber(data_len) - data_len
+    padded_len = data_len
 
-    padded_data = data + (b'\x00' * padding)
+    while padded_len % padSize != 0:
+        padded_len += 1
 
-    return padded_data
+    padded_len = padded_len - data_len
+
+    padding = b'\x00' * padded_len
+
+    padded = data + padding
+
+    return padded

@@ -3,7 +3,7 @@ from binascii import hexlify
 
 from .kpwn import N88_BOOTSTRAP, N88_SHELLCODE, N88_SHELLCODE_ADDRESS
 from .lzsscode import LZSS
-from .utils import doAES, formatData, getBufferAtIndex, padNumber
+from .utils import doAES, formatData, getBufferAtIndex, pad
 
 
 class Img3Tag:
@@ -22,27 +22,30 @@ class Img3Tag:
         pass
 
     def makeTag(self, magic, data):
-        # FIXME
-        # Sometimes padding gets in the way as some data
-        # doesn't need to be multiple of 16.
-
         if magic not in self.valid_tags:
             raise Exception(f'Invalid magic: {magic}')
 
         dataLength = len(data)
 
-        padding_len = padNumber(dataLength) - dataLength
+        padding = 0
 
-        padding = b'\x00' * padding_len
+        # If magic is DATA, pad to 64 byte multiple
 
-        totalLength = self.tag_head_size + dataLength + padding_len
+        if magic == b'DATA':
+            padded = pad(64, data)
+
+            padding = len(padded) - dataLength
+
+            data = padded
+
+        totalLength = self.tag_head_size + dataLength + padding
 
         info = {
             'magic': magic[::-1],
             'totalLength': totalLength,
             'dataLength': dataLength,
             'data': data,
-            'pad': padding
+            'pad': b'\x00' * padding
         }
 
         return info
@@ -65,7 +68,7 @@ class Img3Info(Img3Tag):
         block1_data = getBufferAtIndex(data, 0, block1_len)
 
         block2_len = data_len & 0xF
-        block2_data = None
+        block2_data = b''
 
         # block2_len can be 0
 
@@ -258,11 +261,6 @@ class Img3Extractor(Img3Reader):
         data = tag['data']
         padding = tag['pad']
 
-        # Padding can be 0 / empty
-
-        if not padding:
-            padding = None
-
         block1, block2 = self.getDATABlocks(data)
         tag_data = (block1, block2, padding)
 
@@ -356,9 +354,9 @@ class Img3Crypt(Img3Extractor):
         if not self.key:
             raise Exception('Key missing!')
 
-        tag = self.makeTag(b'DATA', data)
+        block1, block2 = self.getDATABlocks(data)
 
-        block1, block2 = self.getDATABlocks(tag['data'])
+        tag = self.makeTag(b'DATA', data)
 
         padding = tag['pad']
 
@@ -500,11 +498,8 @@ class Img3Modifier(Img3LZSS):
         tag = self.makeTag(b'DATA', new_data)
 
         if self.encrypted_truncate != 0:
-            # FIXME
-            # This code is crappy but is a quick fix for padding.
-            # dataLength doesn't have to be 16 byte aligned, so this'll change
-            # the values below, so that I don't have to modify how functions
-            # operate, for now, idk yet.
+            # TODO CLEAN THIS
+            # Seems like this is needed but could be made better
 
             tag_data = tag['data']
 
@@ -691,3 +686,37 @@ class Img3File(Img3Modifier):
 
                 else:
                     print(f'{k}: {v}')
+
+    def findDifferences(self, data):
+        head1 = self.head
+        head2 = data.head
+
+        tags1 = self.tags
+        tags2 = data.tags
+
+        for (k, v), (kk, vv) in zip(head1.items(), head2.items()):
+            if v != vv:
+                print(f'{k}: {v} -> {vv}')
+
+        tag_magic = None
+
+        for tag1, tag2 in zip(tags1, tags2):
+            for (k, v), (kk, vv) in zip(tag1.items(), tag2.items()):
+                if v != vv:
+                    tag_magic = tag1['magic'][::-1]
+
+                    if k == 'data':
+                        continue
+
+                    if k == 'pad':
+                        pad1_len = len(v)
+                        pad2_len = len(vv)
+
+                        print(f'{k}: {pad1_len} -> {pad2_len}')
+
+                        continue
+
+                    print(f'Found a difference in {tag_magic}')
+                    print(f'{k}: {v} -> {vv}')
+
+            tag_magic = None

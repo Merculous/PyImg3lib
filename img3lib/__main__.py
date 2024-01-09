@@ -8,22 +8,22 @@ from .utils import readBinaryFile, writeBinaryFile
 def main():
     parser = ArgumentParser()
 
-    parser.add_argument('-i', nargs=1)
-    parser.add_argument('-o', nargs=1)
+    parser.add_argument('-i', nargs=1, help='input file (img3)', metavar='img3')
+    parser.add_argument('-o', nargs=1, help='output file', metavar='')
 
-    parser.add_argument('--data', nargs=1)
-    parser.add_argument('--diff', nargs=1)
+    parser.add_argument('--data', nargs=1, help='data for DATA tag', metavar='')
+    parser.add_argument('--diff', nargs=1, help='diff two img3 files', metavar='img3')
 
-    parser.add_argument('-a', action='store_true')
-    parser.add_argument('-d', action='store_true')
-    parser.add_argument('-x', action='store_true')
+    parser.add_argument('-a', action='store_true', help='print all img3 info')
+    parser.add_argument('-d', action='store_true', help='decrypt')
+    parser.add_argument('-x', action='store_true', help='extract DATA')
 
-    parser.add_argument('--cert', action='store_true')
-    parser.add_argument('--n8824k', action='store_true')
-    parser.add_argument('--lzss', action='store_true')
+    parser.add_argument('--cert', action='store_true', help='extract CERT data')
+    parser.add_argument('--n8824k', action='store_true', help='Apply 24kpwn to a 3GS LLB')
+    parser.add_argument('--lzss', action='store_true', help='(de)compress kernel DATA')
 
-    parser.add_argument('-iv', nargs=1)
-    parser.add_argument('-k', nargs=1)
+    parser.add_argument('-iv', nargs=1, metavar='iv')
+    parser.add_argument('-k', nargs=1, metavar='key')
 
     args = parser.parse_args()
 

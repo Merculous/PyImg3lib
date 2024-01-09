@@ -129,10 +129,20 @@ class Img3Getter(Img3Info):
             if tag_magic == magic:
                 tags.append(tag)
 
-        return tags
+        if tags:
+            return tags
+
+        return None
 
     def getAESType(self):
         kbag_tags = self.getTagWithMagic(b'KBAG')
+
+        aes = None
+
+        if kbag_tags is None:
+            # Likely no KBAG tag at all.
+            # Assume img3 is not encrypted.
+            return aes
 
         for tag in kbag_tags:
             kbag_info = self.parseKBAGTag(tag)
@@ -142,7 +152,9 @@ class Img3Getter(Img3Info):
 
             if kbag_type:
                 # Is release, not development
-                return aes_type
+                aes = aes_type
+
+        return aes
 
     def getTagIndex(self, magic):
         for i, tag in enumerate(self.tags):
@@ -250,9 +262,7 @@ class Img3Extractor(Img3Reader):
 
     def extractCertificate(self):
         cert_tag = self.getTagWithMagic(b'CERT')[0]
-
         data = cert_tag['data']
-
         return data
 
     def extractDATA(self):
@@ -276,16 +286,15 @@ class Img3Crypt(Img3Extractor):
 
         self.aes_type = self.getAESType()
 
-        if self.aes_type not in self.aes_supported:
-            raise Exception(f'Unknown AES type: {self.aes_type}')
-
-        self.key_len = self.aes_supported[self.aes_type]
+        self.key_len = self.aes_supported.get(self.aes_type, None)
 
         self.crypt_data = self.extractDATA()
 
         self.padding_encrypted = self.determinePaddingEncryption()
 
         self.encrypted_truncate = 0
+
+        self.image_not_encrypted = True if self.aes_type is None else False
 
     def determinePaddingEncryption(self):
         padding = self.crypt_data[2]
@@ -304,6 +313,11 @@ class Img3Crypt(Img3Extractor):
         return True
 
     def decrypt(self):
+        # Check if img3 even is supposedly encrypted
+
+        if self.image_not_encrypted:
+            return None
+
         block1, block2, padding = self.crypt_data
 
         block1_len = len(block1)
@@ -348,6 +362,11 @@ class Img3Crypt(Img3Extractor):
         return decrypted
 
     def encrypt(self, data):
+        # Check if img3 even is supposedly encrypted
+
+        if self.image_not_encrypted:
+            return None
+
         if not self.iv:
             raise Exception('Iv missing!')
 

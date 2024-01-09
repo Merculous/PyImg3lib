@@ -16,6 +16,7 @@ def main():
 
     parser.add_argument('-a', action='store_true')
     parser.add_argument('-d', action='store_true')
+    parser.add_argument('-x', action='store_true')
 
     parser.add_argument('--cert', action='store_true')
     parser.add_argument('--n8824k', action='store_true')
@@ -31,39 +32,51 @@ def main():
 
         img3file = Img3File(in_data)
 
+        # Set iv and key if user specifies, however not all
+        # images are encrypted. Also iOS 10 images should not be
+        # encrypted anyway.
+
         if args.iv and args.k:
             img3file.iv = args.iv[0]
             img3file.key = args.k[0]
 
-            if args.d and args.o:
-                data = None
+        if args.d and args.o:
+            data = None
 
-                decrypted = img3file.decrypt()
+            decrypted = img3file.decrypt()
 
-                if args.lzss:
-                    data = img3file.handleKernelData(decrypted)
-                else:
-                    data = decrypted
+            if decrypted is None:
+                print('User specified to decrypt but no KBAG tag exists!')
+                return
 
-                writeBinaryFile(args.o[0], data)
+            if args.lzss:
+                data = img3file.handleKernelData(decrypted)
+            else:
+                data = decrypted
 
-            if not args.d and args.data and args.o:
-                data = readBinaryFile(args.data[0])
+            writeBinaryFile(args.o[0], data)
 
-                to_encrypt = None
+        elif not args.d and args.data and args.o:
+            data = readBinaryFile(args.data[0])
 
-                if args.lzss:
-                    to_encrypt = img3file.handleKernelData(data)
-                else:
-                    to_encrypt = data
+            to_encrypt = None
 
-                encrypted = img3file.encrypt(to_encrypt)
+            if args.lzss:
+                to_encrypt = img3file.handleKernelData(data)
+            else:
+                to_encrypt = data
 
-                img3file.replaceDATA(encrypted)
+            encrypted = img3file.encrypt(to_encrypt)
 
-                new_img3 = img3file.updateImg3Data()
+            if encrypted is None:
+                print('User specified to encrypt but no KBAG tag exists!')
+                return
 
-                writeBinaryFile(args.o[0], new_img3)
+            img3file.replaceDATA(encrypted)
+
+            new_img3 = img3file.updateImg3Data()
+
+            writeBinaryFile(args.o[0], new_img3)
 
         elif args.n8824k and args.o:
             pwned_llb = img3file.do24KPWN()
@@ -74,6 +87,11 @@ def main():
             cert_data = img3file.extractCertificate()
 
             writeBinaryFile(args.o[0], cert_data)
+
+        elif args.x and args.o:
+            data = b''.join(img3file.extractDATA())
+
+            writeBinaryFile(args.o[0], data)
 
         elif args.a:
             img3file.printImg3Info()

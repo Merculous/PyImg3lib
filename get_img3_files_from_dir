@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+
+import sys
+from pathlib import Path
+
+from img3lib.img3 import Img3File
+
+
+def getFiles(directory):
+    return [p for p in Path(directory).rglob('*') if p.is_file()]
+
+
+def readBinary(path):
+    with open(path, 'rb') as f:
+        return f.read()
+
+
+def getImg3FilesFromDir(files):
+    img3files = []
+
+    for file in files:
+        file_data = readBinary(file)
+
+        try:
+            img3file = Img3File(file_data)
+        except Exception:
+            continue
+
+        if img3file not in img3files:
+            img3files.append(img3file)
+
+    return img3files
+
+
+def getImg3Info(img3files):
+    info = {}
+
+    for img3file in img3files:
+        if img3file.ident not in info:
+            info[img3file.ident] = []
+
+        for tag in img3file.tags:
+            tag_magic = tag['magic'][::-1]
+
+            if tag_magic not in info[img3file.ident]:
+                info[img3file.ident].append(tag_magic)
+
+    return info
+
+
+def main(args):
+    argc = len(args)
+
+    if argc != 2:
+        sys.exit('Usage: <dir>')
+
+    files = getFiles(args[1])
+
+    img3_files = getImg3FilesFromDir(files)
+
+    info = getImg3Info(img3_files)
+
+    for ident, tags in info.items():
+        print(ident)
+        print(tags)
+
+
+if __name__ == '__main__':
+    main(sys.argv)

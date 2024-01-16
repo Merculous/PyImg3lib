@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 import sys
 from pathlib import Path
 
@@ -48,6 +49,16 @@ def getImg3Info(img3files):
     return info
 
 
+def readJSONFile(path):
+    with open(path) as f:
+        return json.load(f)
+
+
+def writeDataToJSONFile(path, data, indent=2):
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=indent)
+
+
 def main(args):
     argc = len(args)
 
@@ -60,9 +71,32 @@ def main(args):
 
     info = getImg3Info(img3_files)
 
+    stuff = {}
+    empty = False
+
+    json_name = 'img3.json'
+
+    try:
+        json_data = readJSONFile(json_name)
+    except FileNotFoundError:
+        empty = True
+
     for ident, tags in info.items():
-        print(ident)
-        print(tags)
+        ident = ident.decode('utf-8')
+
+        for tag in tags:
+            tag = tag.decode('utf-8')
+
+            if tag not in stuff:
+                stuff[tag] = []
+
+            if ident not in stuff[tag]:
+                stuff[tag].append(ident)
+
+    if not empty:
+        stuff.update(json_data)
+
+    writeDataToJSONFile(json_name, stuff)
 
 
 if __name__ == '__main__':

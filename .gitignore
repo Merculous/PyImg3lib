@@ -16,3 +16,4 @@ manifest
 *.bbfw
 Firmware
 *.png
+*.json

@@ -87,18 +87,24 @@ class LZSS:
         header['prelinkVersion'] += prelinkVersion
 
         compressed_data = lzss.compress(self.data)
-        compressed_size = len(compressed_data)
+        header['compressedSize'] += len(compressed_data)
 
         convert_data = (
             header['signature'],
             header['compressType'],
             header['adler32'],
             header['uncompressedSize'],
-            compressed_size,
+            header['compressedSize'],
             header['prelinkVersion']
         )
 
-        pass
+        padding = b'\x00' * self.PADDING_SIZE
+
+        data = formatData('>4s4s4I', convert_data)
+        data += padding
+        data += compressed_data
+
+        return data
 
     def decompress(self) -> bytes:
         compressed_size = self.info['compressedSize']

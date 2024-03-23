@@ -70,7 +70,7 @@ def getSHA1(data: bytes) -> str:
     return sha1(data).hexdigest()
 
 
-def getBufferAtIndex(data: bytes, index: int, length: int):
+def getBufferAtIndex(data: bytes, index: int, length: int) -> bytes:
     buffer = data[index:index+length]
 
     buffer_len = len(buffer)
@@ -81,7 +81,7 @@ def getBufferAtIndex(data: bytes, index: int, length: int):
     return buffer
 
 
-def formatData(format: str, data: bytes, pack: bool = True):
+def formatData(format: str, data: bytes, pack: bool = True) -> bytes | tuple:
     formatted_data = None
 
     # Use "*" if we are given a list/tuple

@@ -2,22 +2,23 @@
 import struct
 
 from hashlib import sha1
-from zlib import adler32
 
 from Crypto.Cipher import AES
 
+from .errors import DataSizeMismatch
 
-def readBinaryFile(path):
+
+def readBinaryFile(path: str) -> bytes:
     with open(path, 'rb') as f:
         return f.read()
 
 
-def writeBinaryFile(path, data):
+def writeBinaryFile(path: str, data: bytes) -> None:
     with open(path, 'wb') as f:
         f.write(data)
 
 
-def doAES(encrypt, aes_type, data, iv, key):
+def doAES(encrypt: bool, aes_type: str | int, data: bytes , iv: str | bytes, key: str | bytes) -> bytes:
     if isinstance(aes_type, str):
         aes_type = int(aes_type)
 
@@ -65,26 +66,22 @@ def doAES(encrypt, aes_type, data, iv, key):
     return data
 
 
-def getKernelChecksum(data):
-    return adler32(data)
-
-
-def getSHA1(data):
+def getSHA1(data: bytes) -> str:
     return sha1(data).hexdigest()
 
 
-def getBufferAtIndex(data, index, length):
+def getBufferAtIndex(data: bytes, index: int, length: int):
     buffer = data[index:index+length]
 
     buffer_len = len(buffer)
 
     if buffer_len != length:
-        raise Exception(f'Buffer length mismatch! Got {buffer_len}')
+        raise DataSizeMismatch(f'Expected {length}, got {buffer_len}!')
 
     return buffer
 
 
-def formatData(format, data, pack=True):
+def formatData(format: str, data: bytes, pack: bool = True):
     formatted_data = None
 
     # Use "*" if we are given a list/tuple
@@ -110,18 +107,5 @@ def formatData(format, data, pack=True):
     return formatted_data
 
 
-def pad(padSize, data):
-    data_len = len(data)
-
-    padded_len = data_len
-
-    while padded_len % padSize != 0:
-        padded_len += 1
-
-    padded_len = padded_len - data_len
-
-    padding = b'\x00' * padded_len
-
-    padded = data + padding
-
-    return padded
+def isAligned(n: int, alignment: int) -> bool:
+    return n % alignment == 0

@@ -331,15 +331,17 @@ class Img3Crypt(Img3Info):
         decrypt_buffer = block1_data
 
         if remove_padding:
+            # iOS 3.1 / 6.1.6 Kernel DATA
             decrypt_buffer += block2_data
             decrypt_buffer += padding_data
 
         decrypted_data = doAES(False, aes_type, decrypt_buffer, iv, key)
         data = decrypted_data
 
-        if not remove_padding:
-            if block2_size >= 1:
-                data += block2_data
+        if not remove_padding and block2_size >= 1:
+            # iOS 3.0 Kernel DATA
+            # Block2 is non-encrypted
+            data += block2_data
 
         else:
             data = getBufferAtIndex(data, 0, len(data) - padding_size)

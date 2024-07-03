@@ -74,7 +74,19 @@ def getSHA1(data):
 
 
 def getBufferAtIndex(data, index, length):
+    if not data:
+        raise Exception('Data is empty!')
+
+    if index not in range(len(data)):
+        raise Exception('Index error!')
+
+    if length == 0:
+        raise Exception('Length must not be 0!')
+
     buffer = data[index:index+length]
+
+    if not buffer:
+        raise Exception('Buffer is empty!')
 
     buffer_len = len(buffer)
 
@@ -110,12 +122,16 @@ def formatData(format, data, pack=True):
     return formatted_data
 
 
+def isAligned(n, align):
+    return n % align == 0
+
+
 def pad(padSize, data):
     data_len = len(data)
 
     padded_len = data_len
 
-    while padded_len % padSize != 0:
+    while not isAligned(padded_len, padSize):
         padded_len += 1
 
     padded_len = padded_len - data_len

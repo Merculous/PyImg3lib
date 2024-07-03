@@ -29,14 +29,11 @@ class Img3Tag:
 
         padding = 0
 
-        # If magic is DATA, pad to 64 byte multiple
-
         if magic == b'DATA':
-            padded = pad(64, data)
+            paddedData = pad(16, data)
+            paddedSize = len(paddedData)
 
-            padding = len(padded) - dataLength
-
-            data = padded
+            padding += paddedSize - dataLength
 
         totalLength = self.tag_head_size + dataLength + padding
 
@@ -226,9 +223,12 @@ class Img3Reader(Img3Getter):
 
         i += dataLength
 
-        padding = getBufferAtIndex(self.data, i, pad_len)
+        padding = b''
 
-        i += pad_len
+        if pad_len >= 1:
+            padding += getBufferAtIndex(self.data, i, pad_len)
+
+            i += pad_len
 
         info = {
             'magic': magic,
@@ -297,17 +297,16 @@ class Img3Crypt(Img3Extractor):
         self.image_not_encrypted = True if self.aes_type is None else False
 
     def determinePaddingEncryption(self):
-        padding = self.crypt_data[2]
+        paddingData = self.crypt_data[2]
 
-        if not padding:
-            # No padding
-            return False
+        # Padding is 0 aka b''
+        if not paddingData:
+            return
 
-        padding_len = len(padding)
+        paddingSize = len(paddingData)
+        paddingZeroed = b'\x00' * paddingSize
 
-        zeroed_padding = b'\x00' * padding_len
-
-        if padding == zeroed_padding:
+        if paddingData == paddingZeroed:
             return False
 
         return True
@@ -379,18 +378,14 @@ class Img3Crypt(Img3Extractor):
 
         padding = tag['pad']
 
-        to_encrypt = None
+        to_encrypt = block1
         remove_padding = False
 
         if self.padding_encrypted:
             remove_padding = True
 
-            to_encrypt = block1 + block2 + padding
-
-        else:
-            # Encrypting only block1.
-            # Add block2 after encryption
-            to_encrypt = block1
+            to_encrypt += block2
+            to_encrypt += padding
 
         # Start encryption
 
@@ -399,9 +394,8 @@ class Img3Crypt(Img3Extractor):
         if remove_padding:
             self.encrypted_truncate = len(padding)
 
-        else:
-            if block2:
-                encrypted += block2
+        if not remove_padding and block2:
+            encrypted += block2
 
         return encrypted
 
@@ -410,37 +404,8 @@ class Img3LZSS(Img3Crypt):
     def __init__(self, data, iv=None, key=None):
         super().__init__(data, iv, key)
 
-        self.lzss_obj = None
-
-    def getLZSSVersion(self, data):
-        i = self.lzss_obj.lzss_head - 4
-
-        version_raw = getBufferAtIndex(data, i, 4)
-
-        version_format = formatData('>I', version_raw, False)[0]
-
-        return version_format
-
     def handleKernelData(self, data):
-        # Decrypt to get the kernel version
-
-        decrypted = self.decrypt()
-
-        # Setup LZSS object
-
-        self.lzss_obj = LZSS(decrypted)
-
-        version = self.getLZSSVersion(decrypted)
-
-        self.lzss_obj.version = version
-
-        # Change lzss.data with our actual data
-
-        self.lzss_obj.data = data
-
-        output = self.lzss_obj.go()
-
-        return output
+        return LZSS(data).go()
 
 
 class Img3Modifier(Img3LZSS):

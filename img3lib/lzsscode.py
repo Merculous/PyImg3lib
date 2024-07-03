@@ -9,11 +9,11 @@ class LZSS:
     lzss_end = 0x180
     lzss_padding = lzss_end - lzss_head
 
-    def __init__(self, data) -> None:
+    def __init__(self, data, kaslr=0) -> None:
         self.data = data
 
         self.mode = None
-        self.version = None
+        self.version = kaslr  # FIXME
 
     def determineMode(self):
         buffer = getBufferAtIndex(self.data, 0, 8)

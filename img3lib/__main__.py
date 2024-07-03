@@ -107,4 +107,5 @@ def main():
         parser.print_help()
 
 
-main()
+if __name__ == '__main__':
+    main()

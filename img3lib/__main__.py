@@ -21,6 +21,7 @@ def main():
     parser.add_argument('--cert', action='store_true', help='extract CERT data')
     parser.add_argument('--n8824k', action='store_true', help='Apply 24kpwn to a 3GS LLB')
     parser.add_argument('--lzss', action='store_true', help='(de)compress kernel DATA')
+    parser.add_argument('--kaslr', action='store_true', help='kernel supports kASLR (iOS 6+)')
 
     parser.add_argument('-iv', nargs=1, metavar='iv')
     parser.add_argument('-k', nargs=1, metavar='key')
@@ -62,7 +63,7 @@ def main():
             to_encrypt = None
 
             if args.lzss:
-                to_encrypt = img3file.handleKernelData(data)
+                to_encrypt = img3file.handleKernelData(data, args.kaslr)
             else:
                 to_encrypt = data
 

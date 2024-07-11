@@ -3,7 +3,7 @@ from binascii import hexlify
 
 from .kpwn import N88_BOOTSTRAP, N88_SHELLCODE, N88_SHELLCODE_ADDRESS
 from .lzsscode import LZSS
-from .utils import doAES, formatData, getBufferAtIndex, pad
+from .utils import doAES, formatData, getBufferAtIndex, isAligned, pad
 
 
 class Img3Tag:
@@ -30,7 +30,7 @@ class Img3Tag:
         padding = 0
 
         if magic == b'DATA':
-            paddedData = pad(16, data)
+            paddedData = pad(4, data)
             paddedSize = len(paddedData)
 
             padding += paddedSize - dataLength
@@ -340,6 +340,9 @@ class Img3Crypt(Img3Extractor):
             # Padding is irrelevant (for now)?
             to_decrypt = block1
 
+        if not isAligned(len(to_decrypt), 16):
+            raise Exception('Data to decrypt is not 16 aligned!')
+
         decrypted = doAES(False, self.aes_type, to_decrypt, self.iv, self.key)
 
         if remove_padding:
@@ -348,15 +351,14 @@ class Img3Crypt(Img3Extractor):
 
             decrypted = getBufferAtIndex(decrypted, 0, total_len - padding_len)
 
-        else:
+        if not remove_padding and block2:
             # TODO Check if this code is good.
 
             # If the padding was encrypted, we need to remove it
             # for compression. If it was not, then we need to add
             # block2 data as we only decrypted block1.
 
-            if block2:
-                decrypted += block2
+            decrypted += block2
 
         return decrypted
 
@@ -385,9 +387,18 @@ class Img3Crypt(Img3Extractor):
             remove_padding = True
 
             to_encrypt += block2
+
+            # FIXME This is hideous
+
+            if not padding and not isAligned(len(to_encrypt), 16):
+                padding = b'\x00' * (len(pad(16, to_encrypt)) - len(to_encrypt))
+
             to_encrypt += padding
 
         # Start encryption
+
+        if not isAligned(len(to_encrypt), 16):
+            raise Exception('Data to encrypt is not 16 aligned!')
 
         encrypted = doAES(True, self.aes_type, to_encrypt, self.iv, self.key)
 
@@ -404,8 +415,8 @@ class Img3LZSS(Img3Crypt):
     def __init__(self, data, iv=None, key=None):
         super().__init__(data, iv, key)
 
-    def handleKernelData(self, data):
-        return LZSS(data).go()
+    def handleKernelData(self, data, kaslr=True):
+        return LZSS(data, kaslr).go()
 
 
 class Img3Modifier(Img3LZSS):

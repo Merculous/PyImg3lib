@@ -9,11 +9,14 @@ class LZSS:
     lzss_end = 0x180
     lzss_padding = lzss_end - lzss_head
 
-    def __init__(self, data, kaslr=0) -> None:
+    def __init__(self, data, kaslr) -> None:
         self.data = data
 
         self.mode = None
-        self.version = kaslr  # FIXME
+
+        # kASLR true if LC_DYSYMTAB load command exists in macho
+
+        self.version = 1 if kaslr else 0
 
     def determineMode(self):
         buffer = getBufferAtIndex(self.data, 0, 8)

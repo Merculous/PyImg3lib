@@ -1,9 +1,10 @@
 
 from binascii import hexlify
 
+from .der import extractPublicKeyFromDER
 from .kpwn import N88_BOOTSTRAP, N88_SHELLCODE, N88_SHELLCODE_ADDRESS
 from .lzsscode import LZSS
-from .utils import doAES, formatData, getBufferAtIndex, isAligned, pad
+from .utils import doAES, doRSACheck, formatData, getBufferAtIndex, isAligned, pad
 
 
 class Img3Tag:
@@ -262,7 +263,7 @@ class Img3Extractor(Img3Reader):
 
     def extractCertificate(self):
         cert_tag = self.getTagWithMagic(b'CERT')[0]
-        data = cert_tag['data']
+        data = cert_tag['data'] + cert_tag['pad']
         return data
 
     def extractDATA(self):
@@ -275,6 +276,11 @@ class Img3Extractor(Img3Reader):
         tag_data = (block1, block2, padding)
 
         return tag_data
+
+    def extractSHSH(self):
+        tag = self.getTagWithMagic(b'SHSH')[0]
+        data = tag['data']
+        return data
 
 
 class Img3Crypt(Img3Extractor):
@@ -410,6 +416,17 @@ class Img3Crypt(Img3Extractor):
 
         return encrypted
 
+    def verifySHSH(self):
+        certData = self.extractCertificate()
+        pKey = extractPublicKeyFromDER(certData)
+
+        shshRSAEncryptedSHA1 = self.extractSHSH()
+        shshTagStart = self.getPositionOfTag(b'SHSH')
+
+        dataToCheck = self.data[12:shshTagStart]
+        isValid = doRSACheck(pKey, shshRSAEncryptedSHA1, dataToCheck)
+        return isValid
+
 
 class Img3LZSS(Img3Crypt):
     def __init__(self, data, iv=None, key=None):
@@ -437,8 +454,10 @@ class Img3Modifier(Img3LZSS):
 
             sizeNoPack += totalLength
 
-            if tag_magic not in tag_ignore:
-                sigCheckArea += totalLength
+            if tag_magic in tag_ignore:
+                continue
+
+            sigCheckArea += totalLength
 
         fullSize = self.img3_head_size + sizeNoPack
 

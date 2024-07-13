@@ -11,6 +11,7 @@ repository = "https://github.com/Merculous/PyImg3lib"
 python = "^3.11"
 pylzss = "^0.3.4"
 pycryptodome = "^3.19.0"
+asn1 = "^2.7.0"
 
 
 [build-system]

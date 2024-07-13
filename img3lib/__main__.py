@@ -17,6 +17,7 @@ def main():
     parser.add_argument('-a', action='store_true', help='print all img3 info')
     parser.add_argument('-d', action='store_true', help='decrypt')
     parser.add_argument('-x', action='store_true', help='extract DATA')
+    parser.add_argument('-v', action='store_true', help='verify SHSH')
 
     parser.add_argument('--cert', action='store_true', help='extract CERT data')
     parser.add_argument('--n8824k', action='store_true', help='Apply 24kpwn to a 3GS LLB')
@@ -103,6 +104,10 @@ def main():
             new_img3 = Img3File(data)
 
             img3file.findDifferences(new_img3)
+
+        elif args.v:
+            shshValid = img3file.verifySHSH()
+            print(f'SHSH is {"VALID" if shshValid else "INVALID"}')
 
     else:
         parser.print_help()

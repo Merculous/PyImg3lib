@@ -4,7 +4,8 @@ import struct
 from hashlib import sha1
 from zlib import adler32
 
-from Crypto.Cipher import AES
+from Crypto.Hash import SHA1
+from Crypto.Signature import pkcs1_15
 
 
 def readBinaryFile(path):
@@ -141,3 +142,17 @@ def pad(padSize, data):
     padded = data + padding
 
     return padded
+
+
+def doRSACheck(key, sig, data):
+    scheme = pkcs1_15.new(key)
+    dataSHA1 = SHA1.new(data)
+    valid = False
+
+    try:
+        scheme.verify(dataSHA1, sig)
+        valid = True
+    except (ValueError, TypeError):
+        pass
+
+    return valid

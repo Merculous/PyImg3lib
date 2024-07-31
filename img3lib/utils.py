@@ -4,6 +4,7 @@ import struct
 from hashlib import sha1
 from zlib import adler32
 
+from Crypto.Cipher import AES
 from Crypto.Hash import SHA1
 from Crypto.Signature import pkcs1_15
 

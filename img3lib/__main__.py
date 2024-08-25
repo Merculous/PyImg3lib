@@ -47,10 +47,6 @@ def main():
 
             decrypted = img3file.decrypt()
 
-            if decrypted is None:
-                print('User specified to decrypt but no KBAG tag exists!')
-                return
-
             if args.lzss:
                 data = img3file.handleKernelData(decrypted)
             else:
@@ -69,10 +65,6 @@ def main():
                 to_encrypt = data
 
             encrypted = img3file.encrypt(to_encrypt)
-
-            if encrypted is None:
-                print('User specified to encrypt but no KBAG tag exists!')
-                return
 
             img3file.replaceDATA(encrypted)
 

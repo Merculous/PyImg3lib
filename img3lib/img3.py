@@ -19,9 +19,6 @@ class Img3Tag:
         b'RAND', b'SALT'
     )
 
-    def __init__(self):
-        pass
-
     def makeTag(self, magic, data):
         if magic not in self.valid_tags:
             raise Exception(f'Invalid magic: {magic}')
@@ -31,19 +28,26 @@ class Img3Tag:
         padding = 0
 
         if magic == b'DATA':
-            paddedData = pad(4, data)
-            paddedSize = len(paddedData)
+            if not isAligned(dataLength, 16):
+                paddedData = pad(16, data)
+                paddedSize = len(paddedData)
 
-            padding += paddedSize - dataLength
+                padding += paddedSize - dataLength
 
+                data = paddedData
+
+        # totalLength is always 4 byte aligned
         totalLength = self.tag_head_size + dataLength + padding
+
+        if not isAligned(totalLength, 4):
+            raise ValueError('totalLength is not 4 byte aligned!')
 
         info = {
             'magic': magic[::-1],
             'totalLength': totalLength,
             'dataLength': dataLength,
-            'data': data,
-            'pad': b'\x00' * padding
+            'data': getBufferAtIndex(data, 0, dataLength),
+            'pad': getBufferAtIndex(data, dataLength, padding) if padding != 0 else b''
         }
 
         return info
@@ -318,11 +322,6 @@ class Img3Crypt(Img3Extractor):
         return True
 
     def decrypt(self):
-        # Check if img3 even is supposedly encrypted
-
-        if self.image_not_encrypted:
-            return None
-
         block1, block2, padding = self.crypt_data
 
         block1_len = len(block1)
@@ -349,7 +348,16 @@ class Img3Crypt(Img3Extractor):
         if not isAligned(len(to_decrypt), 16):
             raise Exception('Data to decrypt is not 16 aligned!')
 
-        decrypted = doAES(False, self.aes_type, to_decrypt, self.iv, self.key)
+        if not self.image_not_encrypted:
+            if not self.iv:
+                raise Exception('Iv missing!')
+
+            if not self.key:
+                raise Exception('Key missing!')
+
+            decrypted = doAES(False, self.aes_type, to_decrypt, self.iv, self.key)
+        else:
+            decrypted = to_decrypt
 
         if remove_padding:
             # Padding was previously encrypted.
@@ -369,17 +377,6 @@ class Img3Crypt(Img3Extractor):
         return decrypted
 
     def encrypt(self, data):
-        # Check if img3 even is supposedly encrypted
-
-        if self.image_not_encrypted:
-            return None
-
-        if not self.iv:
-            raise Exception('Iv missing!')
-
-        if not self.key:
-            raise Exception('Key missing!')
-
         block1, block2 = self.getDATABlocks(data)
 
         tag = self.makeTag(b'DATA', data)
@@ -406,7 +403,16 @@ class Img3Crypt(Img3Extractor):
         if not isAligned(len(to_encrypt), 16):
             raise Exception('Data to encrypt is not 16 aligned!')
 
-        encrypted = doAES(True, self.aes_type, to_encrypt, self.iv, self.key)
+        if not self.image_not_encrypted:
+            if not self.iv:
+                raise Exception('Iv missing!')
+
+            if not self.key:
+                raise Exception('Key missing!')
+
+            encrypted = doAES(True, self.aes_type, to_encrypt, self.iv, self.key)
+        else:
+            encrypted = to_encrypt
 
         if remove_padding:
             self.encrypted_truncate = len(padding)
@@ -519,8 +525,7 @@ class Img3Modifier(Img3LZSS):
 
             tag['dataLength'] -= self.encrypted_truncate
             tag['data'] = getBufferAtIndex(tag_data, 0, tag['dataLength'])
-            tag['pad'] = getBufferAtIndex(
-                tag_data, tag['dataLength'], self.encrypted_truncate)
+            tag['pad'] = getBufferAtIndex(tag_data, tag['dataLength'], self.encrypted_truncate)
 
         self.replaceTag(tag)
 

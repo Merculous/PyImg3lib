@@ -89,7 +89,7 @@ def test(info: dict):
                 origCRC = results[version][name.name]['origCRC']
                 newCRC = results[version][name.name]['newCRC']
 
-                results[version][name.name]['failed'] = True if origCRC != newCRC else False
+                results[version][name.name]['failed'] = origCRC != newCRC
 
                 if results[version][name.name]['failed']:
                     print(f'{version}: {name.name}')

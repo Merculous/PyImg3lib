@@ -24,30 +24,22 @@ class Img3Tag:
             raise Exception(f'Invalid magic: {magic}')
 
         dataLength = len(data)
+        totalLength = dataLength + self.tag_head_size
 
-        padding = 0
+        paddedData = pad(4, data)
+        paddedSize = len(paddedData)
 
-        if magic == b'DATA':
-            if not isAligned(dataLength, 16):
-                paddedData = pad(16, data)
-                paddedSize = len(paddedData)
+        paddingSize = paddedSize - dataLength
+        totalLength += paddingSize
 
-                padding += paddedSize - dataLength
-
-                data = paddedData
-
-        # totalLength is always 4 byte aligned
-        totalLength = self.tag_head_size + dataLength + padding
-
-        if not isAligned(totalLength, 4):
-            raise ValueError('totalLength is not 4 byte aligned!')
+        data = paddedData
 
         info = {
             'magic': magic[::-1],
             'totalLength': totalLength,
             'dataLength': dataLength,
             'data': getBufferAtIndex(data, 0, dataLength),
-            'pad': getBufferAtIndex(data, dataLength, padding) if padding != 0 else b''
+            'pad': getBufferAtIndex(data, dataLength, paddingSize) if paddingSize != 0 else b''
         }
 
         return info
@@ -389,14 +381,24 @@ class Img3Crypt(Img3Extractor):
         if self.padding_encrypted:
             remove_padding = True
 
-            to_encrypt += block2
+            # Damn, seems like some images like 7.1.2 iPhone3,2
+            # need extra padding during encryption. Tihmstar,
+            # you're right, WTF?
 
-            # FIXME This is hideous
+            # Ok, crypto needs extra padding, add it.
 
-            if not padding and not isAligned(len(to_encrypt), 16):
-                padding = b'\x00' * (len(pad(16, to_encrypt)) - len(to_encrypt))
+            to_encrypt += block2 + padding
 
-            to_encrypt += padding
+            to_encrypt_len = len(to_encrypt)
+
+            if not isAligned(to_encrypt_len, 16):
+                paddedData = pad(16, to_encrypt)
+                paddedSize = len(paddedData)
+
+                paddingSize = paddedSize - to_encrypt_len + len(padding)
+                padding = b'\x00' * paddingSize
+
+                to_encrypt = paddedData
 
         # Start encryption
 

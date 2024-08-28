@@ -16,23 +16,21 @@ def getPaths(path: str) -> list[Path]:
     return [p for p in Path(path).rglob('*')]
 
 
-def readManifest(data: bytes) -> dict:
+def readRestorePlist(data: bytes) -> dict:
     plist = plistlib.loads(data)
-    buildident = plist['BuildIdentities'][0]
 
     info = {
         plist['ProductVersion']: {
-            'device': plist['SupportedProductTypes'][0],
-            'buildid': plist['ProductBuildVersion'],
-            'codename': buildident['Info']['BuildTrain']
+            'device': plist['ProductType'],
+            'buildid': plist['ProductBuildVersion']
         }
     }
 
     return info
 
 
-def getKeys(client: Client, device: str, buildid: str, codename: str) -> dict:
-    return client.get_key_data(device, buildid, codename)
+def getKeys(client: Client, device: str, buildid: str) -> dict | None:
+    return client.get_key_data(device, buildid)
 
 
 def writeJSON(path, data) -> None:
@@ -116,16 +114,15 @@ def go():
                 'info': None
             }
 
-        if 'BuildManifest.plist' in path.parts:
-            manifest = readManifest(path.read_bytes())
+        if 'Restore.plist' in path.parts:
+            manifest = readRestorePlist(path.read_bytes())
             info[current_version]['info'] = manifest
 
             version_info = info[current_version]['info'][current_version]
             device = version_info['device']
             buildid = version_info['buildid']
-            codename = version_info['codename']
 
-            info[current_version]['keys'] = getKeys(client, device, buildid, codename)
+            info[current_version]['keys'] = getKeys(client, device, buildid)
 
         if current_version not in path.parts:
             continue

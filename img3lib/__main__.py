@@ -2,7 +2,7 @@
 from argparse import ArgumentParser
 
 from .img3 import Img3File
-from .utils import readBinaryFile, writeBinaryFile
+from .utils import readBinaryFile, writeBinaryFile, readPlist
 
 
 def main():
@@ -13,6 +13,7 @@ def main():
 
     parser.add_argument('--data', nargs=1, help='data for DATA tag', metavar='')
     parser.add_argument('--diff', nargs=1, help='diff two img3 files', metavar='img3')
+    parser.add_argument('--blob', nargs=1, help='sign and personalize an img3', metavar='')
 
     parser.add_argument('-a', action='store_true', help='print all img3 info')
     parser.add_argument('-d', action='store_true', help='decrypt')
@@ -100,6 +101,16 @@ def main():
         elif args.v:
             shshValid = img3file.verifySHSH()
             print(f'SHSH is {"VALID" if shshValid else "INVALID"}')
+
+        elif args.blob and args.o:
+            shshBlobs = readPlist(args.blob[0])
+            signed = img3file.sign(shshBlobs)
+            verify = Img3File(signed).verifySHSH()
+
+            if not verify:
+                raise Exception('Failed to sign!')
+
+            return writeBinaryFile(args.o[0], signed)
 
     else:
         parser.print_help()

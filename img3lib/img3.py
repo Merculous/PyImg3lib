@@ -4,7 +4,7 @@ from binascii import hexlify
 from .der import extractPublicKeyFromDER
 from .kpwn import N88_BOOTSTRAP, N88_SHELLCODE, N88_SHELLCODE_ADDRESS
 from .lzsscode import LZSS
-from .utils import doAES, doRSACheck, formatData, getBufferAtIndex, isAligned, pad
+from .utils import doAES, doRSACheck, formatData, getBufferAtIndex, getSimilarityBetweenData, isAligned, pad
 
 
 class Img3Tag:
@@ -182,8 +182,11 @@ class Img3Reader(Img3Getter):
 
         self.ident = self.head['ident'][::-1]
 
-    def readHead(self):
-        head_data = getBufferAtIndex(self.data, 0, self.img3_head_size)
+    def readHead(self, i=0, data=None):
+        if data is None:
+            data = self.data
+
+        head_data = getBufferAtIndex(data, i, self.img3_head_size)
 
         (
             magic,
@@ -203,8 +206,11 @@ class Img3Reader(Img3Getter):
 
         return info
 
-    def readTag(self, i):
-        tag_head = getBufferAtIndex(self.data, i, self.tag_head_size)
+    def readTag(self, i=0, data=None):
+        if data is None:
+            data = self.data
+
+        tag_head = getBufferAtIndex(data, i, self.tag_head_size)
 
         (
             magic,
@@ -216,14 +222,14 @@ class Img3Reader(Img3Getter):
 
         i += self.tag_head_size
 
-        tag_data = getBufferAtIndex(self.data, i, dataLength)
+        tag_data = getBufferAtIndex(data, i, dataLength)
 
         i += dataLength
 
         padding = b''
 
         if pad_len >= 1:
-            padding += getBufferAtIndex(self.data, i, pad_len)
+            padding += getBufferAtIndex(data, i, pad_len)
 
             i += pad_len
 
@@ -742,3 +748,52 @@ class Img3File(Img3Modifier):
                     print(f'{k}: {v} -> {vv}')
 
             tag_magic = None
+
+    def sign(self, shshBlobs):
+        blob = None
+        matches = {}
+
+        for blobType in shshBlobs:
+            bType = blobType.lower().encode()
+            similarity = getSimilarityBetweenData(bType, self.ident)
+            matches[blobType] = similarity
+
+        bestMatch = max(matches.values())
+
+        for bType in matches:
+            if matches[bType] != bestMatch:
+                continue
+
+            print(f'Signing for: {bType}')
+
+            blob = shshBlobs[bType]['Blob']
+            break
+
+        if not blob:
+            raise Exception('Could not find correct blob!')
+
+        newTagsSize = len(blob)
+        i = 0
+        newTags = []
+
+        while i != newTagsSize:
+            tag = self.readTag(i, blob)
+            i += tag['totalLength']
+            newTags.append(tag)
+
+        shshTagIndex = 0
+
+        for i, tag in enumerate(self.tags):
+            if tag['magic'] != b'SHSH'[::-1]:
+                continue
+
+            shshTagIndex += i
+            break
+
+        tags = self.tags[:shshTagIndex]
+        tags.extend(newTags)
+
+        self.tags = tags
+        self.updateHead()
+
+        return self.updateImg3Data()

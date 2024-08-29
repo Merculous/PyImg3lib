@@ -1,6 +1,8 @@
 
+import plistlib
 import struct
 
+from difflib import SequenceMatcher
 from hashlib import sha1
 from zlib import adler32
 
@@ -157,3 +159,12 @@ def doRSACheck(key, sig, data):
         pass
 
     return valid
+
+
+def readPlist(path):
+    with open(path, 'rb') as f:
+        return plistlib.load(f)
+
+
+def getSimilarityBetweenData(src1, src2):
+    return SequenceMatcher(a=src1, b=src2).ratio()

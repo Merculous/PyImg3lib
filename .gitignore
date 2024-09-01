@@ -17,3 +17,7 @@ manifest
 Firmware
 *.png
 *.json
+*.txt
+*.der
+*.shsh
+*.shsh2

@@ -428,6 +428,12 @@ class Img3Crypt(Img3Extractor):
         if not remove_padding and block2:
             encrypted += block2
 
+            # iOS 10 is always 16 aligned
+            if self.image_not_encrypted:
+                encryptedPadded = pad(16, encrypted)
+                self.encrypted_truncate = len(encryptedPadded) - len(encrypted)
+                encrypted = encryptedPadded
+
         return encrypted
 
     def verifySHSH(self):

@@ -130,21 +130,21 @@ def isAligned(n, align):
     return n % align == 0
 
 
+def padNumber(n, align):
+    paddedSize = n
+
+    while not isAligned(paddedSize, align):
+        paddedSize += 1
+
+    return paddedSize
+
+
 def pad(padSize, data):
-    data_len = len(data)
-
-    padded_len = data_len
-
-    while not isAligned(padded_len, padSize):
-        padded_len += 1
-
-    padded_len = padded_len - data_len
-
-    padding = b'\x00' * padded_len
-
-    padded = data + padding
-
-    return padded
+    dataSize = len(data)
+    paddedSize = padNumber(dataSize, padSize)
+    paddingSize = paddedSize - dataSize
+    data += b'\x00' * paddingSize
+    return data
 
 
 def doRSACheck(key, sig, data):

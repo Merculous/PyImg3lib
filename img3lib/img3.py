@@ -2,7 +2,7 @@
 from binascii import hexlify
 
 from .der import extractPublicKeyFromDER
-from .kpwn import N88_BOOTSTRAP, N88_SHELLCODE, N88_SHELLCODE_ADDRESS
+from .kpwn import N88_SHELLCODE_ADDRESS, N88_SHELLCODE_OFFSET, N88_SHELLCODE, N88_BOOTSTRAP_OFFSET, N88_BOOTSTRAP, N88_24KPWN_SIZE
 from .lzsscode import LZSS
 from .utils import doAES, doRSACheck, formatData, getBufferAtIndex, getSimilarityBetweenData, isAligned, pad
 
@@ -556,99 +556,41 @@ class Img3File(Img3Modifier):
         super().__init__(data, iv, key)
 
     def do24KPWN(self):
-        type_tag = self.getTagWithMagic(b'TYPE')[0]
-        data_tag = self.getTagWithMagic(b'DATA')[0]
-        cert_tag = self.getTagWithMagic(b'CERT')[0]
+        if self.ident != b'illb':
+            raise ValueError('24KPWN is only for LLB images!')
 
-        # Update first 4 bytes of DATA with shellcode address
+        dataTag = self.getTagWithMagic(b'DATA')[0]
+        dataTagData = bytearray(dataTag['data'])
 
-        data_tag_data = data_tag['data']
-        data_tag_data_len = data_tag['dataLength']
+        dataTagDataDWORD = getBufferAtIndex(dataTagData, 0, 4)
+        dataTagData[:4] = N88_SHELLCODE_ADDRESS
+        dataTag['data'] = dataTagData
 
-        data_tag_dword = getBufferAtIndex(data_tag_data, 0, 4)
-        data_tag_rest = getBufferAtIndex(
-            data_tag_data, 4, data_tag_data_len - 4)
+        certTag = self.getTagWithMagic(b'CERT')[0]
 
-        new_data = N88_SHELLCODE_ADDRESS + data_tag_rest
+        certStartPos = self.getPositionOfTag(b'CERT')
+        certEndPos = certStartPos + certTag['totalLength']
 
-        # Replace data tag with the modified
+        sizeToFill = N88_24KPWN_SIZE - (certStartPos + self.tag_head_size)
 
-        new_data_tag = self.makeTag(b'DATA', new_data)
+        paddedData = bytearray(pad(sizeToFill, certTag['data']))
 
-        self.replaceTag(new_data_tag)
+        shellcode = N88_SHELLCODE.replace(b'\xAA\xBB\xCC\xDD', dataTagDataDWORD)
+        shellcodeSize = len(shellcode)
+        shellcodeOffset = N88_SHELLCODE_OFFSET - certEndPos
 
-        if len(new_data) != data_tag_data_len:
-            raise Exception('New data length mismatch!')
+        paddedData[shellcodeOffset:shellcodeOffset+shellcodeSize] = shellcode
 
-        # Begin CERT modification
+        bootstrap = N88_BOOTSTRAP
+        bootstrapSize = len(bootstrap)
+        bootstrapOffset = N88_BOOTSTRAP_OFFSET - certEndPos
 
-        cert_len = cert_tag['totalLength']
-        cert_data = cert_tag['data']
-        cert_pad = cert_tag['pad']
+        paddedData[bootstrapOffset:bootstrapOffset+bootstrapSize] = bootstrap
 
-        cert_start = self.getPositionOfTag(b'CERT')
-        cert_end = cert_start + cert_len
+        newCertTag = self.makeTag(b'CERT', paddedData)
+        self.replaceTag(newCertTag)
 
-        shellcode = b''.join(N88_SHELLCODE)
-        bootstrap = b''.join(N88_BOOTSTRAP)
-
-        padding = b'\x00' * 0xfb0
-        bootstrap_start = 0x24000
-
-        shellcode_start = bootstrap_start - len(padding) - len(shellcode)
-
-        zeroes_after_cert = b'\x00' * (shellcode_start - cert_end)
-
-        # Put our 24kpwn data together
-
-        n8824k_data = (
-            cert_data + cert_pad,
-            zeroes_after_cert,
-            shellcode.replace(b'\xAA\xBB\xCC\xDD', data_tag_dword),
-            padding,
-            bootstrap
-        )
-
-        n8824k_data = b''.join(n8824k_data)
-
-        # Replace CERT
-
-        n8824k_cert_tag = self.makeTag(b'CERT', n8824k_data)
-
-        # FIXME
-        # Remove padding
-
-        n8824k_cert_tag_pad_len = len(n8824k_cert_tag['pad'])
-
-        n8824k_cert_tag['totalLength'] -= n8824k_cert_tag_pad_len
-
-        n8824k_cert_tag['pad'] = b''
-
-        self.replaceTag(n8824k_cert_tag)
-
-        # Replace TYPE padding with zeroes cause this is what xpwntool does.
-        # Also just to produce exact LLB's.
-
-        type_tag_pad_len = len(type_tag['pad'])
-
-        type_tag_zeroed_padding = b'\x00' * type_tag_pad_len
-
-        type_tag['pad'] = type_tag_zeroed_padding
-
-        self.replaceTag(type_tag)
-
-        pwned_data = self.updateImg3Data()
-        pwned_data_len = len(pwned_data)
-
-        # Check that n8824k_data is the correct size
-
-        n8824k_expected_size = 0x241d0
-
-        if pwned_data_len != n8824k_expected_size:
-            raise Exception(
-                f'n8824k data size mismatch! Size: {hex(pwned_data_len)}!')
-
-        return pwned_data
+        return self.updateImg3Data()
 
     def printImg3Info(self):
         head = self.head

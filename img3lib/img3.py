@@ -150,13 +150,6 @@ class Img3Getter(Img3Info):
 
         return aes
 
-    def getTagIndex(self, magic):
-        for i, tag in enumerate(self.tags):
-            tag_magic = tag['magic']
-
-            if tag_magic == magic:
-                return i
-
     def getPositionOfTag(self, magic):
         pos = self.img3_head_size
 
@@ -514,13 +507,12 @@ class Img3Modifier(Img3LZSS):
         return new_data
 
     def replaceTag(self, tag):
-        tag_magic = tag['magic']
+        for i, t in enumerate(self.tags):
+            if t['magic'] != tag['magic']:
+                continue
 
-        tag_index = self.getTagIndex(tag_magic)
-
-        self.tags[tag_index] = tag
-
-        # Update img3 info with new tag
+            self.tags[i] = tag
+            break
 
         self.updateHead()
 
@@ -550,6 +542,20 @@ class Img3Modifier(Img3LZSS):
         new_img3 = self.updateImg3Data()
         return new_img3
 
+    def removeTag(self, magic, removeAll=True):
+        # TODO removeAll
+
+        tags = []
+
+        for tag in self.tags:
+            if tag['magic'] == magic[::-1]:
+                continue
+
+            tags.append(tag)
+
+        self.tags = tags
+        self.updateHead()
+
 
 class Img3File(Img3Modifier):
     def __init__(self, data, iv=None, key=None):
@@ -559,6 +565,12 @@ class Img3File(Img3Modifier):
         if self.ident != b'illb':
             raise ValueError('24KPWN is only for LLB images!')
 
+        typeTag = self.getTagWithMagic(b'TYPE')[0]
+        typeTagPadding = b'\x00' * len(typeTag['pad'])
+        typeTag['pad'] = typeTagPadding
+
+        self.replaceTag(typeTag)
+
         dataTag = self.getTagWithMagic(b'DATA')[0]
         dataTagData = bytearray(dataTag['data'])
 
@@ -566,29 +578,31 @@ class Img3File(Img3Modifier):
         dataTagData[:4] = N88_SHELLCODE_ADDRESS
         dataTag['data'] = dataTagData
 
+        self.removeTag(b'KBAG')
+
         certTag = self.getTagWithMagic(b'CERT')[0]
+        certTagData = certTag['data'] + certTag['pad']
 
-        certStartPos = self.getPositionOfTag(b'CERT')
-        certEndPos = certStartPos + certTag['totalLength']
+        pos = self.getPositionOfTag(b'CERT') + self.tag_head_size
+        sizeToFill = N88_24KPWN_SIZE - pos
 
-        sizeToFill = N88_24KPWN_SIZE - (certStartPos + self.tag_head_size)
-
-        paddedData = bytearray(pad(sizeToFill, certTag['data']))
+        paddedData = bytearray(pad(sizeToFill, certTagData))
 
         shellcode = N88_SHELLCODE.replace(b'\xAA\xBB\xCC\xDD', dataTagDataDWORD)
-        shellcodeSize = len(shellcode)
-        shellcodeOffset = N88_SHELLCODE_OFFSET - certEndPos
-
-        paddedData[shellcodeOffset:shellcodeOffset+shellcodeSize] = shellcode
+        shellcodeSize = len(N88_SHELLCODE)
+        shellcodeStart = N88_SHELLCODE_OFFSET - pos
+        paddedData[shellcodeStart:shellcodeStart+shellcodeSize] = shellcode
 
         bootstrap = N88_BOOTSTRAP
         bootstrapSize = len(bootstrap)
-        bootstrapOffset = N88_BOOTSTRAP_OFFSET - certEndPos
-
-        paddedData[bootstrapOffset:bootstrapOffset+bootstrapSize] = bootstrap
+        bootstrapStart = N88_BOOTSTRAP_OFFSET - pos
+        paddedData[bootstrapStart:bootstrapStart+bootstrapSize] = bootstrap
 
         newCertTag = self.makeTag(b'CERT', paddedData)
         self.replaceTag(newCertTag)
+
+        if self.head['fullSize'] != N88_24KPWN_SIZE:
+            raise ValueError(f'LLB is not {N88_24KPWN_SIZE} in size!')
 
         return self.updateImg3Data()
 

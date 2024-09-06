@@ -258,7 +258,7 @@ class Img3Extractor(Img3Reader):
 
     def extractCertificate(self):
         cert_tag = self.getTagWithMagic(b'CERT')[0]
-        data = cert_tag['data'] + cert_tag['pad']
+        data = cert_tag['data']
         return data
 
     def extractDATA(self):

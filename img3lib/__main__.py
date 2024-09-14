@@ -21,7 +21,9 @@ def main():
     parser.add_argument('-v', action='store_true', help='verify SHSH')
 
     parser.add_argument('--cert', action='store_true', help='extract CERT data')
-    parser.add_argument('--n8824k', action='store_true', help='Apply 24kpwn to a 3GS LLB')
+    parser.add_argument('--kpwn', action='store_true', help='make a 24KPWN LLB')
+    parser.add_argument('--n72', action='store_true', help='N72/iPod use with --kpwn')
+    parser.add_argument('--n88', action='store_true', help='N88/3GS use with --kpwn')
     parser.add_argument('--lzss', action='store_true', help='(de)compress kernel DATA')
     parser.add_argument('--kaslr', action='store_true', help='kernel supports kASLR (iOS 6+)')
 
@@ -32,7 +34,6 @@ def main():
 
     if args.i:
         in_data = readBinaryFile(args.i[0])
-
         img3file = Img3File(in_data)
 
         # Set iv and key if user specifies, however not all
@@ -73,8 +74,20 @@ def main():
 
             writeBinaryFile(args.o[0], new_img3)
 
-        elif args.n8824k and args.o:
-            pwned_llb = img3file.do24KPWN()
+        elif args.kpwn and args.o:
+            isN88 = None
+
+            if args.n72:
+                isN88 = False
+
+            elif args.n88:
+                isN88 = True
+
+            else:
+                print('Please provide either --n72 or --n88!')
+                return
+
+            pwned_llb = img3file.do24KPWN(isN88)
 
             writeBinaryFile(args.o[0], pwned_llb)
 

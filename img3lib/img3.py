@@ -2,7 +2,18 @@
 from binascii import hexlify
 
 from .der import extractPublicKeyFromDER
-from .kpwn import N88_SHELLCODE_ADDRESS, N88_SHELLCODE_OFFSET, N88_SHELLCODE, N88_BOOTSTRAP_OFFSET, N88_BOOTSTRAP, N88_24KPWN_SIZE
+from .kpwn import (
+    N72_SHELLCODE_ADDRESS,
+    N88_SHELLCODE_ADDRESS,
+    N72_24KPWN_SIZE,
+    N88_24KPWN_SIZE,
+    KPWN_SHELLCODE_OFFSET,
+    KPWN_BOOTSTRAP_OFFSET,
+    N72_BOOTSTRAP,
+    N88_BOOTSTRAP,
+    N72_SHELLCODE,
+    N88_SHELLCODE
+)
 from .lzsscode import LZSS
 from .utils import doAES, doRSACheck, formatData, getBufferAtIndex, getSimilarityBetweenData, isAligned, pad
 
@@ -561,21 +572,42 @@ class Img3File(Img3Modifier):
     def __init__(self, data, iv=None, key=None):
         super().__init__(data, iv, key)
 
-    def do24KPWN(self):
+    def do24KPWN(self, isN88=True):
         if self.ident != b'illb':
             raise ValueError('24KPWN is only for LLB images!')
 
-        typeTag = self.getTagWithMagic(b'TYPE')[0]
-        typeTagPadding = b'\x00' * len(typeTag['pad'])
-        typeTag['pad'] = typeTagPadding
+        kpwnSize = None
+        dword = None
+        shellcode = None
+        bootstrap = None
+        shellcodeOffset = KPWN_SHELLCODE_OFFSET
+        bootstrapOffset = KPWN_BOOTSTRAP_OFFSET
 
-        self.replaceTag(typeTag)
+        if isN88:
+            kpwnSize = N88_24KPWN_SIZE
+            dword = N88_SHELLCODE_ADDRESS
+            shellcode = N88_SHELLCODE
+            bootstrap = N88_BOOTSTRAP
+        else:
+            kpwnSize = N72_24KPWN_SIZE
+            dword = N72_SHELLCODE_ADDRESS
+            shellcode = N72_SHELLCODE
+            bootstrap = N72_BOOTSTRAP
+
+        if isN88:
+            typeTag = self.getTagWithMagic(b'TYPE')[0]
+            typeTagPadding = b'\x00' * len(typeTag['pad'])
+            typeTag['pad'] = typeTagPadding
+
+            self.replaceTag(typeTag)
+        else:
+            self.removeTag(b'TYPE')
 
         dataTag = self.getTagWithMagic(b'DATA')[0]
         dataTagData = bytearray(dataTag['data'])
 
         dataTagDataDWORD = getBufferAtIndex(dataTagData, 0, 4)
-        dataTagData[:4] = N88_SHELLCODE_ADDRESS
+        dataTagData[:4] = dword
         dataTag['data'] = dataTagData
 
         self.removeTag(b'KBAG')
@@ -584,25 +616,28 @@ class Img3File(Img3Modifier):
         certTagData = certTag['data'] + certTag['pad']
 
         pos = self.getPositionOfTag(b'CERT') + self.tag_head_size
-        sizeToFill = N88_24KPWN_SIZE - pos
+        sizeToFill = kpwnSize - pos
 
         paddedData = bytearray(pad(sizeToFill, certTagData))
 
-        shellcode = N88_SHELLCODE.replace(b'\xAA\xBB\xCC\xDD', dataTagDataDWORD)
+        if not isN88:
+            shellcode = shellcode.replace(b'\xdf\xdb\x64\x80', dataTagDataDWORD)
+        else:
+            shellcode = shellcode.replace(b'\xAA\xBB\xCC\xDD', dataTagDataDWORD)
+
         shellcodeSize = len(N88_SHELLCODE)
-        shellcodeStart = N88_SHELLCODE_OFFSET - pos
+        shellcodeStart = shellcodeOffset - pos
         paddedData[shellcodeStart:shellcodeStart+shellcodeSize] = shellcode
 
-        bootstrap = N88_BOOTSTRAP
         bootstrapSize = len(bootstrap)
-        bootstrapStart = N88_BOOTSTRAP_OFFSET - pos
+        bootstrapStart = bootstrapOffset - pos
         paddedData[bootstrapStart:bootstrapStart+bootstrapSize] = bootstrap
 
         newCertTag = self.makeTag(b'CERT', paddedData)
         self.replaceTag(newCertTag)
 
-        if self.head['fullSize'] != N88_24KPWN_SIZE:
-            raise ValueError(f'LLB is not {N88_24KPWN_SIZE} in size!')
+        if self.head['fullSize'] != kpwnSize:
+            raise ValueError(f'LLB is not {kpwnSize} in size!')
 
         return self.updateImg3Data()
 

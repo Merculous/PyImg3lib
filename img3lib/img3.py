@@ -295,18 +295,12 @@ class Img3Crypt(Img3Extractor):
 
         self.iv = iv
         self.key = key
-
         self.aes_type = self.getAESType()
-
         self.key_len = self.aes_supported.get(self.aes_type, None)
-
         self.crypt_data = self.extractDATA()
-
         self.padding_encrypted = self.determinePaddingEncryption()
-
         self.encrypted_truncate = 0
-
-        self.image_not_encrypted = True if self.aes_type is None else False
+        self.image_encrypted = True if self.getTagWithMagic(b'KBAG') else False
 
     def determinePaddingEncryption(self):
         paddingData = self.crypt_data[2]
@@ -350,7 +344,7 @@ class Img3Crypt(Img3Extractor):
         if not isAligned(len(to_decrypt), 16):
             raise Exception('Data to decrypt is not 16 aligned!')
 
-        if not self.image_not_encrypted:
+        if self.image_encrypted:
             if not self.iv:
                 raise Exception('Iv missing!')
 
@@ -415,7 +409,7 @@ class Img3Crypt(Img3Extractor):
         if not isAligned(len(to_encrypt), 16):
             raise Exception('Data to encrypt is not 16 aligned!')
 
-        if not self.image_not_encrypted:
+        if self.image_encrypted:
             if not self.iv:
                 raise Exception('Iv missing!')
 
@@ -433,7 +427,7 @@ class Img3Crypt(Img3Extractor):
             encrypted += block2
 
             # iOS 10 is always 16 aligned
-            if self.image_not_encrypted:
+            if not self.image_encrypted :
                 encryptedPadded = pad(16, encrypted)
                 self.encrypted_truncate = len(encryptedPadded) - len(encrypted)
                 encrypted = encryptedPadded

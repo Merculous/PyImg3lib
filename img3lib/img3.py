@@ -50,6 +50,10 @@ class MissingBlobType(Exception):
     pass
 
 
+class BadSEPOValue(Exception):
+    pass
+
+
 class Img3Tag:
     tag_head_size = 12
 
@@ -60,6 +64,20 @@ class Img3Tag:
         b'ECID', b'TYPE', b'DATA',
         b'NONC', b'CEPO', b'OVRD',
         b'RAND', b'SALT'
+    )
+
+    valid_types = (
+        b'krnl', b'rdsk', b'bat1',
+        b'chg1', b'illb', b'batF',
+        b'nsrv', b'chg0', b'dtre',
+        b'glyC', b'bat0', b'logo',
+        b'ibot', b'glyP', b'recm',
+        b'ibec', b'ibss'
+    )
+
+    valid_sepos = (
+        0x1, 0x2, 0x3,
+        0x4, 0x10, 0x11
     )
 
     def makeTag(self, magic, data):

@@ -4,7 +4,8 @@ import plistlib
 import sys
 from pathlib import Path
 
-from img3lib.img3 import Img3File, BadMagic
+from img3lib.img3 import AlignmentError, Img3File, BadMagic, SizeError, TagNotFound, BadSEPOValue
+from img3lib.utils import formatData, isAligned
 from lykos.client import Client
 from lykos.errors import PageNotFound
 
@@ -47,6 +48,31 @@ class Img3Test:
         self.img3 = img3
         self.version = version
 
+    def test_TYPE(self) -> bool:
+        try:
+            typeTag = self.img3.getTagWithMagic(b'TYPE')
+        except TagNotFound:
+            return False
+        else:
+            typeTag = typeTag[0]
+
+        if typeTag['totalLength'] != 32:
+            raise SizeError('totalLength is not of size 32!')
+
+        if typeTag['dataLength'] != 4:
+            raise SizeError('dataLength is not of size 4!')
+
+        if typeTag['data'][::-1] not in self.img3.valid_types:
+            raise BadMagic(f'Unknown value: {typeTag["data"]}')
+
+        if typeTag['data'][::-1] != self.img3.ident:
+            raise BadMagic('TYPE does not match ident!')
+
+        if len(typeTag['pad']) != 16:
+            raise SizeError('Pad is not of size 16!')
+
+        return True
+
     def test_DATA(self) -> bool:
         hasKASLR = True if int(self.version.split('.')[0]) >= 6 else False
         isKernel = True if self.img3.ident == b'krnl' else False
@@ -70,6 +96,66 @@ class Img3Test:
         newData = self.img3.extractDATA()
 
         return hash(oldData) == hash(newData)
+
+    def test_SEPO(self) -> bool:
+        try:
+            sepoTag = self.img3.getTagWithMagic(b'SEPO')
+        except TagNotFound:
+            return False
+        else:
+            sepoTag = sepoTag[0]
+
+        if not isAligned(sepoTag['totalLength'], 4):
+            raise AlignmentError('totalLenth is not 4 byte aligned!')
+
+        if sepoTag['dataLength'] != 4:
+            raise SizeError('dataLength is not of size 4!')
+
+        if len(sepoTag['data']) != 4:
+            raise SizeError('data is not of size 4!')
+
+        if len(sepoTag['pad']) >= 1 and not isAligned(len(sepoTag['pad']), 4):
+            raise SizeError('pad is not of size 0 but is not 4 byte aligned!')
+
+        sepo = formatData('<I', sepoTag['data'], False)[0]
+
+        if sepo not in self.img3.valid_sepos:
+            raise BadSEPOValue(f'Bad value: {sepo}')
+
+        return True
+    
+    def test_KBAG(self) -> bool:
+        pass
+
+    def test_SHSH(self) -> bool:
+        try:
+            shshTag = self.img3.getTagWithMagic(b'SHSH')
+        except TagNotFound:
+            # iOS 2 -> 9
+            if int(self.version.split('.')[0]) <= 9:
+                return False
+            else:
+                # iOS 10 (no SHSH or CERT)
+                return True
+        else:
+            shshTag = shshTag[0]
+
+        if shshTag['totalLength'] != 140:
+            raise SizeError('totalLength is not of size 140!')
+
+        if shshTag['dataLength'] != 128:
+            raise SizeError('dataLength is not of size 128!')
+
+        if len(shshTag['data']) != 128:
+            raise SizeError('data is not of size 128!')
+
+        if len(shshTag['pad']) >= 1:
+            raise SizeError('pad is not of size 0!')
+        
+        return self.img3.verifySHSH()
+
+    def test_CERT(self) -> bool:
+        pass
 
 
 def setupInfo(ipswPath: str) -> dict:
@@ -161,7 +247,12 @@ def go(ipswPath: str, jsonPath: str) -> None:
             if ident not in results[version]:
                 results[version][ident] = {}
 
+            results[version][ident]['TYPE'] = test.test_TYPE()
             results[version][ident]['DATA'] = test.test_DATA()
+            results[version][ident]['SEPO'] = test.test_SEPO()
+            # results[version][ident]['KBAG'] = test.test_KBAG()
+            results[version][ident]['SHSH'] = test.test_SHSH()
+            # results[version][ident]['CERT'] = test.test_CERT()
 
     writeJSON(jsonPath, results)
 

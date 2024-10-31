@@ -3,7 +3,6 @@ import json
 import plistlib
 import sys
 from pathlib import Path
-from zlib import crc32
 
 from img3lib.img3 import Img3File
 from lykos.client import Client
@@ -47,30 +46,28 @@ class Img3Test:
         self.version = version
 
     def test_DATA(self) -> bool:
-        origImg3 = self.img3
-        isKernel = origImg3.ident == b'krnl'
+        hasKASLR = True if int(self.version.split('.')[0]) >= 6 else False
+        isKernel = True if self.img3.ident == b'krnl' else False
 
-        decryptedDATA = origImg3.decrypt()
+        oldData = self.img3.extractDATA()
 
-        versionMinor = int(self.version.split('.')[0])
-        hasKASLR = True if versionMinor >= 6 else False
+        decryptedData = self.img3.decrypt()
 
         if isKernel:
             # Decompress
-            decryptedDATA = origImg3.handleKernelData(decryptedDATA, hasKASLR)
+            decryptedData = self.img3.handleKernelData(decryptedData, hasKASLR)
 
-        if isKernel:
             # Compress
-            decryptedDATA = origImg3.handleKernelData(decryptedDATA, hasKASLR)
+            decryptedData = self.img3.handleKernelData(decryptedData, hasKASLR)
 
-        encryptedDATA = origImg3.encrypt(decryptedDATA)
+        encryptedData = self.img3.encrypt(decryptedData)
 
-        newImg3 = origImg3.replaceDATA(encryptedDATA)
+        # Required
+        self.img3.replaceDATA(encryptedData)
 
-        origCRC = crc32(origImg3.data)
-        newCRC = crc32(newImg3)
+        newData = self.img3.extractDATA()
 
-        return origCRC == newCRC
+        return hash(oldData) == hash(newData)
 
 
 def setupInfo(ipswPath: str) -> dict:

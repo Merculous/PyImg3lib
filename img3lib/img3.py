@@ -18,6 +18,38 @@ from .lzsscode import LZSS
 from .utils import doAES, doRSACheck, formatData, getBufferAtIndex, getSimilarityBetweenData, isAligned, pad
 
 
+class BadMagic(Exception):
+    pass
+
+
+class BadAESType(Exception):
+    pass
+
+
+class TagNotFound(Exception):
+    pass
+
+
+class AlignmentError(Exception):
+    pass
+
+
+class MissingArgument(Exception):
+    pass
+
+
+class IdentityError(Exception):
+    pass
+
+
+class SizeError(Exception):
+    pass
+
+
+class MissingBlobType(Exception):
+    pass
+
+
 class Img3Tag:
     tag_head_size = 12
 
@@ -32,7 +64,7 @@ class Img3Tag:
 
     def makeTag(self, magic, data):
         if magic not in self.valid_tags:
-            raise Exception(f'Invalid magic: {magic}')
+            raise BadMagic(f'Invalid magic: {magic}')
 
         dataLength = len(data)
         totalLength = dataLength + self.tag_head_size
@@ -97,7 +129,7 @@ class Img3Info(Img3Tag):
         release = True if crypt_state == 1 else False
 
         if aes_type not in self.aes_supported:
-            raise Exception(f'Unknown AES: {aes_type}')
+            raise BadAESType(f'Unknown AES: {aes_type}')
 
         iv_len = 16
         key_len = self.aes_supported[aes_type]
@@ -135,20 +167,16 @@ class Img3Getter(Img3Info):
                 tags.append(tag)
 
         if not tags:
-            raise Exception(f'Tag with magic {magic} not found!')
+            raise TagNotFound(f'Tag with magic {magic} not found!')
         
         return tags
 
 
     def getAESType(self):
-        kbag_tags = self.getTagWithMagic(b'KBAG')
-
-        aes = None
-
-        if kbag_tags is None:
-            # Likely no KBAG tag at all.
-            # Assume img3 is not encrypted.
-            return aes
+        try:
+            kbag_tags = self.getTagWithMagic(b'KBAG')
+        except TagNotFound:
+            return
 
         for tag in kbag_tags:
             kbag_info = self.parseKBAGTag(tag)
@@ -156,11 +184,11 @@ class Img3Getter(Img3Info):
             kbag_type = kbag_info['release']
             aes_type = kbag_info['aes_type']
 
-            if kbag_type:
-                # Is release, not development
-                aes = aes_type
+            if not kbag_type:
+                continue
 
-        return aes
+            # Is release, not development
+            return aes_type
 
     def getPositionOfTag(self, magic):
         pos = self.img3_head_size
@@ -200,6 +228,9 @@ class Img3Reader(Img3Getter):
             sigCheckArea,
             ident
         ) = formatData('<4s3I4s', head_data, False)
+
+        if magic != b'Img3'[::-1]:
+            raise BadMagic('This is not an img3!')
 
         info = {
             'magic': magic,
@@ -295,7 +326,13 @@ class Img3Crypt(Img3Extractor):
         self.crypt_data = self.setupCryptData()
         self.padding_encrypted = self.determinePaddingEncryption()
         self.encrypted_truncate = 0
-        self.image_encrypted = True if self.getTagWithMagic(b'KBAG') else False
+        
+        try:
+            self.getTagWithMagic(b'KBAG')
+        except TagNotFound:
+            self.image_encrypted = False
+        else:
+            self.image_encrypted = True
 
     def setupCryptData(self):
         dataTag = self.getTagWithMagic(b'DATA')[0]
@@ -344,14 +381,14 @@ class Img3Crypt(Img3Extractor):
             to_decrypt = block1
 
         if not isAligned(len(to_decrypt), 16):
-            raise Exception('Data to decrypt is not 16 aligned!')
+            raise AlignmentError('Data to decrypt is not 16 aligned!')
 
         if self.image_encrypted:
             if not self.iv:
-                raise Exception('Iv missing!')
+                raise MissingArgument('Iv missing!')
 
             if not self.key:
-                raise Exception('Key missing!')
+                raise MissingArgument('Key missing!')
 
             decrypted = doAES(False, self.aes_type, to_decrypt, self.iv, self.key)
         else:
@@ -409,14 +446,14 @@ class Img3Crypt(Img3Extractor):
         # Start encryption
 
         if not isAligned(len(to_encrypt), 16):
-            raise Exception('Data to encrypt is not 16 aligned!')
+            raise AlignmentError('Data to encrypt is not 16 aligned!')
 
         if self.image_encrypted:
             if not self.iv:
-                raise Exception('Iv missing!')
+                raise MissingArgument('Iv missing!')
 
             if not self.key:
-                raise Exception('Key missing!')
+                raise MissingArgument('Key missing!')
 
             encrypted = doAES(True, self.aes_type, to_encrypt, self.iv, self.key)
         else:
@@ -563,7 +600,7 @@ class Img3File(Img3Modifier):
 
     def do24KPWN(self, isN88=True):
         if self.ident != b'illb':
-            raise ValueError('24KPWN is only for LLB images!')
+            raise IdentityError('24KPWN is only for LLB images!')
 
         kpwnSize = None
         dword = None
@@ -626,7 +663,7 @@ class Img3File(Img3Modifier):
         self.replaceTag(newCertTag)
 
         if self.head['fullSize'] != kpwnSize:
-            raise ValueError(f'LLB is not {kpwnSize} in size!')
+            raise SizeError(f'LLB is not {kpwnSize} in size!')
 
         return self.updateImg3Data()
 
@@ -756,7 +793,7 @@ class Img3File(Img3Modifier):
             break
 
         if not blob:
-            raise Exception('Could not find correct blob!')
+            raise MissingBlobType('Could not find correct blob!')
 
         newTagsSize = len(blob)
         i = 0

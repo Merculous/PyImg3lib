@@ -4,7 +4,7 @@ import plistlib
 import sys
 from pathlib import Path
 
-from img3lib.img3 import Img3File
+from img3lib.img3 import Img3File, BadMagic
 from lykos.client import Client
 from lykos.errors import PageNotFound
 
@@ -31,13 +31,15 @@ def getKeys(client: Client, device: str, buildid: str) -> dict | None:
         keyData = client.get_key_data(device, buildid)
     except PageNotFound:
         return
+    except Exception:
+        raise
     else:
         return keyData
 
 
 def writeJSON(path, data) -> None:
     with open(path, 'w') as f:
-        json.dump(data, f)
+        json.dump(data, f, indent=2)
 
 
 class Img3Test:
@@ -119,8 +121,10 @@ def initImg3s(ipswPath: str):
         for file in files:
             try:
                 img3 = Img3File(file.read_bytes())
-            except Exception:
+            except BadMagic:
                 continue
+            except Exception:
+                raise
 
             if keys:
                 for value in keys:
@@ -143,7 +147,7 @@ def go(ipswPath: str, jsonPath: str) -> None:
 
     for version in stuff:
         if version not in results:
-            results[version] = []
+            results[version] = {}
 
         for img3 in stuff[version]['img3s']:
             if not img3.iv and not img3.key:
@@ -152,13 +156,12 @@ def go(ipswPath: str, jsonPath: str) -> None:
                     continue
 
             test = Img3Test(img3, version)
+            ident = img3.ident.decode()
 
-            testResult = (
-                img3.ident.decode(),
-                test.test_DATA()
-            )
+            if ident not in results[version]:
+                results[version][ident] = {}
 
-            results[version].append(testResult)
+            results[version][ident]['DATA'] = test.test_DATA()
 
     writeJSON(jsonPath, results)
 

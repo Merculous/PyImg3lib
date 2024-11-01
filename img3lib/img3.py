@@ -230,7 +230,6 @@ class Img3Reader(Img3Getter):
 
         self.head = self.readHead()
         self.tags = self.readTags()
-
         self.ident = self.head['ident'][::-1]
 
     def readHead(self, i=0, data=None):
@@ -272,6 +271,9 @@ class Img3Reader(Img3Getter):
             dataLength
         ) = formatData('<4s2I', tag_head, False)
 
+        if magic[::-1] not in self.valid_tags:
+            raise BadMagic(f'Unknown magic at index: {i}')
+
         pad_len = totalLength - dataLength - self.tag_head_size
 
         i += self.tag_head_size
@@ -305,10 +307,17 @@ class Img3Reader(Img3Getter):
         i = self.img3_head_size
 
         while i != fullSize:
-            tag = self.readTag(i)
-            tags.append(tag)
-
-            i += tag['totalLength']
+            try:
+                tag = self.readTag(i)
+            except BadMagic as e:
+                print(f'Got error: {e}')
+                print(f'Fullsize: {self.head["fullSize"]}')
+                print(f'SizeNoPack: {self.head["sizeNoPack"]}')
+                print('Possible img3 sizing is incorrect!')
+                exit(1)
+            else:
+                tags.append(tag)
+                i += tag['totalLength']
 
         return tags
 

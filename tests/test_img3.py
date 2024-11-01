@@ -157,6 +157,37 @@ class Img3Test:
     def test_CERT(self) -> bool:
         pass
 
+    def test_head(self) -> bool:
+        head = self.img3.head
+        typeTag = self.img3.getTagWithMagic(b'TYPE')[0]
+        typeIdent = typeTag['data']
+
+        if typeIdent != head['ident']:
+            raise BadMagic('TYPE does not match head identity!')
+
+        fullSize = self.img3.img3_head_size
+        sigCheckArea = 0
+
+        tagsIgnore = (b'SHSH'[::-1], b'CERT'[::-1])
+
+        for tag in self.img3.tags:
+            if tag['magic'] not in tagsIgnore:
+                sigCheckArea += tag['totalLength']
+
+            fullSize += tag['totalLength']
+
+        sizeNoPack = fullSize - self.img3.img3_head_size
+
+        if head['fullSize'] != fullSize:
+            raise SizeError('fullSize does not match!')
+
+        if head['sizeNoPack'] != sizeNoPack:
+            raise SizeError('sizeNoPack does not match!')
+
+        if head['sigCheckArea'] != sigCheckArea:
+            raise SizeError('sigCheckArea does not match!')
+
+        return True
 
 def setupInfo(ipswPath: str) -> dict:
     ipsw_contents = getPaths(ipswPath)
@@ -253,6 +284,7 @@ def go(ipswPath: str, jsonPath: str) -> None:
             # results[version][ident]['KBAG'] = test.test_KBAG()
             results[version][ident]['SHSH'] = test.test_SHSH()
             # results[version][ident]['CERT'] = test.test_CERT()
+            results[version][ident]['head'] = test.test_head()
 
     writeJSON(jsonPath, results)
 

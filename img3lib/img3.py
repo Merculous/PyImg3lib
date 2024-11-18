@@ -1,7 +1,10 @@
 
 from binascii import hexlify
 
-from .der import extractPublicKeyFromDER
+from .der import (
+    extractNestedImages,
+    extractPublicKeyFromDER
+)
 from .kpwn import (
     N72_SHELLCODE_ADDRESS,
     N88_SHELLCODE_ADDRESS,
@@ -14,8 +17,18 @@ from .kpwn import (
     N72_SHELLCODE,
     N88_SHELLCODE
 )
-from .lzsscode import LZSS
-from .utils import doAES, doRSACheck, formatData, getBufferAtIndex, getSimilarityBetweenData, isAligned, pad
+from .lzsscode import (
+    LZSS
+)
+from .utils import (
+    doAES,
+    doRSACheck,
+    formatData,
+    getBufferAtIndex,
+    getSimilarityBetweenData,
+    isAligned,
+    pad
+)
 
 
 class BadMagic(Exception):
@@ -353,7 +366,8 @@ class Img3Crypt(Img3Extractor):
         self.crypt_data = self.setupCryptData()
         self.padding_encrypted = self.determinePaddingEncryption()
         self.encrypted_truncate = 0
-        
+        self.nested_images = self.getNestedImages() if self.getTagWithMagic(b'CERT') else None
+
         try:
             self.getTagWithMagic(b'KBAG')
         except TagNotFound:
@@ -510,6 +524,30 @@ class Img3Crypt(Img3Extractor):
         dataToCheck = self.data[12:shshTagStart]
         isValid = doRSACheck(pKey, shshRSAEncryptedSHA1, dataToCheck)
         return isValid
+    
+    def getNestedImages(self):
+        certData = self.extractCertificate()
+        nestedImages = extractNestedImages(certData)
+
+        i = 0
+
+        headData = getBufferAtIndex(nestedImages, i, self.img3_head_size)
+        headInfo = self.readHead(i, headData)
+
+        i += self.img3_head_size
+
+        tags = []
+
+        while i != headInfo['fullSize']:
+            try:
+                tag = self.readTag(i, nestedImages)
+            except BadMagic:
+                raise
+            else:
+                tags.append(tag)
+                i += tag['totalLength']
+
+        return headInfo, tags
 
 
 class Img3LZSS(Img3Crypt):

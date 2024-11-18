@@ -340,17 +340,29 @@ class Img3Extractor(Img3Reader):
         super().__init__(data)
 
     def extractCertificate(self):
-        cert_tag = self.getTagWithMagic(b'CERT')[0]
+        try:
+            cert_tag = self.getTagWithMagic(b'CERT')[0]
+        except TagNotFound:
+            return
+
         data = cert_tag['data']
         return data
 
     def extractDATA(self):
-        tag = self.getTagWithMagic(b'DATA')[0]
+        try:
+            tag = self.getTagWithMagic(b'DATA')[0]
+        except TagNotFound:
+            return
+
         data = tag['data'] + tag['pad']
         return data
 
     def extractSHSH(self):
-        tag = self.getTagWithMagic(b'SHSH')[0]
+        try:
+            tag = self.getTagWithMagic(b'SHSH')[0]
+        except TagNotFound:
+            return
+
         data = tag['data']
         return data
 
@@ -366,7 +378,7 @@ class Img3Crypt(Img3Extractor):
         self.crypt_data = self.setupCryptData()
         self.padding_encrypted = self.determinePaddingEncryption()
         self.encrypted_truncate = 0
-        self.nested_images = self.getNestedImages() if self.getTagWithMagic(b'CERT') else None
+        self.nested_images = self.getNestedImages()
 
         try:
             self.getTagWithMagic(b'KBAG')
@@ -376,7 +388,11 @@ class Img3Crypt(Img3Extractor):
             self.image_encrypted = True
 
     def setupCryptData(self):
-        dataTag = self.getTagWithMagic(b'DATA')[0]
+        try:
+            dataTag = self.getTagWithMagic(b'DATA')[0]
+        except TagNotFound:
+            raise
+
         data = dataTag['data']
         padding = dataTag['pad']
         block1, block2 = self.getDATABlocks(data)
@@ -527,6 +543,10 @@ class Img3Crypt(Img3Extractor):
     
     def getNestedImages(self):
         certData = self.extractCertificate()
+
+        if certData is None:
+            return
+
         nestedImages = extractNestedImages(certData)
 
         i = 0
@@ -686,15 +706,22 @@ class Img3File(Img3Modifier):
             bootstrap = N72_BOOTSTRAP
 
         if isN88:
-            typeTag = self.getTagWithMagic(b'TYPE')[0]
+            try:
+                typeTag = self.getTagWithMagic(b'TYPE')[0]
+            except TagNotFound:
+                raise
+
             typeTagPadding = b'\x00' * len(typeTag['pad'])
             typeTag['pad'] = typeTagPadding
-
             self.replaceTag(typeTag)
         else:
             self.removeTag(b'TYPE')
 
-        dataTag = self.getTagWithMagic(b'DATA')[0]
+        try:
+            dataTag = self.getTagWithMagic(b'DATA')[0]
+        except TagNotFound:
+            raise
+
         dataTagData = bytearray(dataTag['data'])
 
         dataTagDataDWORD = getBufferAtIndex(dataTagData, 0, 4)
@@ -703,7 +730,11 @@ class Img3File(Img3Modifier):
 
         self.removeTag(b'KBAG')
 
-        certTag = self.getTagWithMagic(b'CERT')[0]
+        try:
+            certTag = self.getTagWithMagic(b'CERT')[0]
+        except TagNotFound:
+            raise
+
         certTagData = certTag['data'] + certTag['pad']
 
         pos = self.getPositionOfTag(b'CERT') + self.tag_head_size

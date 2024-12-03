@@ -85,7 +85,7 @@ class Img3Tag:
         b'nsrv', b'chg0', b'dtre',
         b'glyC', b'bat0', b'logo',
         b'ibot', b'glyP', b'recm',
-        b'ibec', b'ibss'
+        b'ibec', b'ibss', b'cert' # 'cert' != 'CERT'
     )
 
     valid_sepos = (
@@ -199,7 +199,7 @@ class Img3Getter(Img3Info):
 
         if not tags:
             raise TagNotFound(f'Tag with magic {magic} not found!')
-        
+
         return tags
 
 
@@ -532,6 +532,10 @@ class Img3Crypt(Img3Extractor):
 
     def verifySHSH(self):
         certData = self.extractCertificate()
+
+        if certData is None:
+            return
+
         pKey = extractPublicKeyFromDER(certData)
 
         shshRSAEncryptedSHA1 = self.extractSHSH()
@@ -540,7 +544,7 @@ class Img3Crypt(Img3Extractor):
         dataToCheck = self.data[12:shshTagStart]
         isValid = doRSACheck(pKey, shshRSAEncryptedSHA1, dataToCheck)
         return isValid
-    
+
     def getNestedImages(self):
         certData = self.extractCertificate()
 
@@ -552,7 +556,12 @@ class Img3Crypt(Img3Extractor):
         i = 0
 
         headData = getBufferAtIndex(nestedImages, i, self.img3_head_size)
-        headInfo = self.readHead(i, headData)
+
+        try:
+            headInfo = self.readHead(i, headData)
+        except BadMagic:
+            # Assume 'cert' (not CERT) doesn't exist
+            return
 
         i += self.img3_head_size
 

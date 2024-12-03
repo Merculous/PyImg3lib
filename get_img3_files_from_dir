@@ -46,6 +46,19 @@ def getImg3Info(img3files):
             if tag_magic not in info[img3file.ident]:
                 info[img3file.ident].append(tag_magic)
 
+        if img3file.nested_images:
+            nestedImg3, nestedTags = img3file.nested_images
+            nestedIdent = nestedImg3['ident'][::-1]
+
+            if nestedIdent not in info[img3file.ident]:
+                info[img3file.ident].append(nestedIdent)
+
+            for nestedTag in nestedTags:
+                nestedMagic = nestedTag['magic'][::-1]
+
+                if nestedMagic not in info[img3file.ident]:
+                    info[img3file.ident].append(nestedMagic)
+
     return info
 
 

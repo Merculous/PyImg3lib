@@ -391,7 +391,7 @@ class Img3Crypt(Img3Extractor):
         try:
             dataTag = self.getTagWithMagic(b'DATA')[0]
         except TagNotFound:
-            raise
+            return
 
         data = dataTag['data']
         padding = dataTag['pad']
@@ -399,6 +399,9 @@ class Img3Crypt(Img3Extractor):
         return block1, block2, padding
 
     def determinePaddingEncryption(self):
+        if self.crypt_data is None:
+            return
+
         paddingData = self.crypt_data[2]
 
         # Padding is 0 aka b''

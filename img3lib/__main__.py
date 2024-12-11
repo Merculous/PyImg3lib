@@ -1,5 +1,6 @@
 
 from argparse import ArgumentParser
+from binascii import hexlify
 
 from .img3 import Img3File
 from .utils import readBinaryFile, writeBinaryFile, readPlist
@@ -26,6 +27,7 @@ def main():
     parser.add_argument('--n88', action='store_true', help='N88/3GS use with --kpwn')
     parser.add_argument('--lzss', action='store_true', help='(de)compress kernel DATA')
     parser.add_argument('--kaslr', action='store_true', help='kernel supports kASLR (iOS 6+)')
+    parser.add_argument('--kbag', action='store_true', help='decrypt KBAG(s)')
 
     parser.add_argument('-iv', nargs=1, metavar='iv')
     parser.add_argument('-k', nargs=1, metavar='key')
@@ -124,6 +126,28 @@ def main():
                 raise Exception('Failed to sign!')
 
             return writeBinaryFile(args.o[0], signed)
+
+        elif args.kbag:
+            kbags = img3file.prepareKBAGS()
+
+            if not args.d:
+                for isRelease, kbag in kbags:
+                    print(f'Release: {isRelease}')
+                    print(f'KBAG: {hexlify(kbag).decode()}')
+
+                return
+
+            if args.k:
+                for isRelease, kbag in kbags:
+                    if not isRelease:
+                        continue
+
+                    break
+
+                iv, key = img3file.decryptKBAG(kbag, b''.fromhex(args.k[0]))
+
+                print(f'IV: {hexlify(iv).decode()}')
+                print(f'Key: {hexlify(key).decode()}')
 
     else:
         parser.print_help()

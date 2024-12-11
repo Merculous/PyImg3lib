@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from img3lib.img3 import AlignmentError, Img3File, BadMagic, SizeError, TagNotFound, BadSEPOValue
+from img3lib.der import decodeDER
 from img3lib.utils import formatData, isAligned
 from lykos.client import Client
 from lykos.errors import PageNotFound
@@ -131,9 +132,14 @@ class Img3Test:
     
     def test_KBAG(self) -> bool | None:
         try:
-            self.img3.getTagWithMagic(b'KBAG')
+            kbags = self.img3.getTagWithMagic(b'KBAG')
         except TagNotFound:
             return
+
+        for kbag in kbags:
+            self.img3.parseKBAGTag(kbag)
+
+        return True
 
     def test_SHSH(self) -> bool | None:
         try:
@@ -159,9 +165,16 @@ class Img3Test:
 
     def test_CERT(self) -> bool | None:
         try:
-            self.img3.getTagWithMagic(b'CERT')
+            tag = self.img3.getTagWithMagic(b'CERT')
         except TagNotFound:
             return
+        else:
+            tag = tag[0]
+
+        data = tag['data']
+        decodeDER(data)
+
+        return True
 
     def test_head(self) -> bool:
         head = self.img3.head
@@ -296,9 +309,9 @@ def go(ipswPath: str, jsonPath: str) -> None:
             results[version][ident]['TYPE'] = test.test_TYPE()
             results[version][ident]['DATA'] = test.test_DATA()
             results[version][ident]['SEPO'] = test.test_SEPO()
-            # results[version][ident]['KBAG'] = test.test_KBAG()
+            results[version][ident]['KBAG'] = test.test_KBAG()
             results[version][ident]['SHSH'] = test.test_SHSH()
-            # results[version][ident]['CERT'] = test.test_CERT()
+            results[version][ident]['CERT'] = test.test_CERT()
             results[version][ident]['head'] = test.test_head()
 
     writeJSON(jsonPath, results)

@@ -581,6 +581,32 @@ class Img3Crypt(Img3Extractor):
 
         return headInfo, tags
 
+    def prepareKBAGS(self):
+        kbags = self.getTagWithMagic(b'KBAG')
+
+        prepared = []
+
+        for kbag in kbags:
+            kbagInfo = self.parseKBAGTag(kbag)
+
+            buffer = kbagInfo['iv'] + kbagInfo['key']
+            bufferSize = len(buffer)
+
+            if not isAligned(bufferSize, 16):
+                buffer = pad(16, buffer)
+                bufferSize = len(buffer)
+
+            prepared.append((kbagInfo['release'], buffer))
+
+        return prepared
+
+    def decryptKBAG(self, kbag, key):
+        iv = b'\x00' * 16
+        decryptedKbag = doAES(False, self.aes_type, kbag, iv, key)
+        iv = getBufferAtIndex(decryptedKbag, 0, 16)
+        key = getBufferAtIndex(decryptedKbag, 16, len(kbag) - self.aes_supported[self.aes_type])
+        return iv, key
+
 
 class Img3LZSS(Img3Crypt):
     def __init__(self, data, iv=None, key=None):

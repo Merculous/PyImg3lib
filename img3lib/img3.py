@@ -67,6 +67,14 @@ class BadSEPOValue(Exception):
     pass
 
 
+class BadBORDValue(Exception):
+    pass
+
+
+class BadCHIPValue(Exception):
+    pass
+
+
 class Img3Tag:
     tag_head_size = 12
 
@@ -89,8 +97,19 @@ class Img3Tag:
     )
 
     valid_sepos = (
-        0x1, 0x2, 0x3,
-        0x4, 0x5, 0x10, 0x11
+        1, 2, 3,
+        4, 5, 16,
+        17
+    )
+
+    valid_boards = (
+        0, 2, 4,
+        8, 10, 14
+    )
+
+    valid_chips = (
+        0x8930, 0x8940, 0x8942,
+        0x8950
     )
 
     def makeTag(self, magic, data):

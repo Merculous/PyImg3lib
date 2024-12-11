@@ -4,9 +4,18 @@ import plistlib
 import sys
 from pathlib import Path
 
-from img3lib.img3 import AlignmentError, Img3File, BadMagic, SizeError, TagNotFound, BadSEPOValue
+from img3lib.img3 import (
+    AlignmentError,
+    BadBORDValue,
+    Img3File,
+    BadMagic,
+    SizeError,
+    TagNotFound,
+    BadSEPOValue,
+    BadCHIPValue
+)
 from img3lib.der import decodeDER
-from img3lib.utils import formatData, isAligned
+from img3lib.utils import formatData, getBufferAtIndex, isAligned
 from lykos.client import Client
 from lykos.errors import PageNotFound
 
@@ -102,6 +111,21 @@ class Img3Test:
         newData = self.img3.extractDATA()
 
         return hash(oldData) == hash(newData)
+    
+    def test_VERS(self) -> bool | None:
+        try:
+            versTag = self.img3.getTagWithMagic(b'VERS')
+        except TagNotFound:
+            return
+        else:
+            versTag = versTag[0]
+
+        data = versTag['data']
+
+        iBootStrSize = formatData('<I', getBufferAtIndex(data, 0, 4), False)[0]
+        getBufferAtIndex(data, 4, iBootStrSize)
+
+        return True
 
     def test_SEPO(self) -> bool | None:
         try:
@@ -130,6 +154,36 @@ class Img3Test:
 
         return True
     
+    def test_CHIP(self) -> bool | None:
+        try:
+            chipTag = self.img3.getTagWithMagic(b'CHIP')
+        except TagNotFound:
+            return
+        else:
+            chipTag = chipTag[0]
+
+        chip = formatData('<I', chipTag['data'], False)[0]
+
+        if chip not in self.img3.valid_chips:
+            raise BadCHIPValue(f'Bad value: {chip}')
+
+        return True
+
+    def test_BORD(self) -> bool | None:
+        try:
+            bordTag = self.img3.getTagWithMagic(b'BORD')
+        except TagNotFound:
+            return
+        else:
+            bordTag = bordTag[0]
+
+        board = formatData('<I', bordTag['data'], False)[0]
+
+        if board not in self.img3.valid_boards:
+            raise BadBORDValue(f'Bad value: {board}')
+
+        return True
+
     def test_KBAG(self) -> bool | None:
         try:
             kbags = self.img3.getTagWithMagic(b'KBAG')
@@ -140,6 +194,26 @@ class Img3Test:
             self.img3.parseKBAGTag(kbag)
 
         return True
+    
+    def test_SALT(self) -> bool | None:
+        try:
+            saltTag = self.img3.getTagWithMagic(b'SALT')
+        except TagNotFound:
+            return
+        else:
+            saltTag = saltTag[0]
+
+        pass
+
+    def test_ECID(self) -> bool | None:
+        try:
+            ecidTag = self.img3.getTagWithMagic(b'ECID')
+        except TagNotFound:
+            return
+        else:
+            ecidTag = ecidTag[0]
+
+        pass
 
     def test_SHSH(self) -> bool | None:
         try:
@@ -175,6 +249,36 @@ class Img3Test:
         decodeDER(data)
 
         return True
+    
+    def test_CEPO(self) -> bool | None:
+        try:
+            cepoTag = self.img3.getTagWithMagic(b'CEPO')
+        except TagNotFound:
+            return
+        else:
+            cepoTag = cepoTag[0]
+
+        pass
+
+    def test_SDOM(self) -> bool | None:
+        try:
+            sdomTag = self.img3.getTagWithMagic(b'SDOM')
+        except TagNotFound:
+            return
+        else:
+            sdomTag = sdomTag[0]
+
+        pass
+
+    def test_PROD(self) -> bool | None:
+        try:
+            prodTag = self.img3.getTagWithMagic(b'PROD')
+        except TagNotFound:
+            return
+        else:
+            prodTag = prodTag[0]
+
+        pass
 
     def test_head(self) -> bool:
         head = self.img3.head
@@ -308,10 +412,18 @@ def go(ipswPath: str, jsonPath: str) -> None:
 
             results[version][ident]['TYPE'] = test.test_TYPE()
             results[version][ident]['DATA'] = test.test_DATA()
+            results[version][ident]['VERS'] = test.test_VERS()
             results[version][ident]['SEPO'] = test.test_SEPO()
+            results[version][ident]['CHIP'] = test.test_CHIP()
+            results[version][ident]['BORD'] = test.test_BORD()
             results[version][ident]['KBAG'] = test.test_KBAG()
+            results[version][ident]['SALT'] = test.test_SALT()
+            results[version][ident]['ECID'] = test.test_ECID()
             results[version][ident]['SHSH'] = test.test_SHSH()
             results[version][ident]['CERT'] = test.test_CERT()
+            # results[version][ident]['CEPO'] = test.test_CEPO()
+            # results[version][ident]['SDOM'] = test.test_SDOM()
+            # results[version][ident]['PROD'] = test.test_PROD()
             results[version][ident]['head'] = test.test_head()
 
     writeJSON(jsonPath, results)

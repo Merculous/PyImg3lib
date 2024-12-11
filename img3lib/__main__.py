@@ -115,6 +115,11 @@ def main():
 
         elif args.v:
             shshValid = img3file.verifySHSH()
+
+            if shshValid is None:
+                print('SHSH tag not found. Cannot validate!')
+                return
+
             print(f'SHSH is {"VALID" if shshValid else "INVALID"}')
 
         elif args.blob and args.o:

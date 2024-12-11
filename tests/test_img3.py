@@ -48,11 +48,11 @@ class Img3Test:
         self.img3 = img3
         self.version = version
 
-    def test_TYPE(self) -> bool:
+    def test_TYPE(self) -> bool | None:
         try:
             typeTag = self.img3.getTagWithMagic(b'TYPE')
         except TagNotFound:
-            return False
+            return
         else:
             typeTag = typeTag[0]
 
@@ -73,7 +73,12 @@ class Img3Test:
 
         return True
 
-    def test_DATA(self) -> bool:
+    def test_DATA(self) -> bool | None:
+        try:
+            self.img3.getTagWithMagic(b'DATA')
+        except TagNotFound:
+            return
+
         hasKASLR = True if int(self.version.split('.')[0]) >= 6 else False
         isKernel = True if self.img3.ident == b'krnl' else False
 
@@ -97,11 +102,11 @@ class Img3Test:
 
         return hash(oldData) == hash(newData)
 
-    def test_SEPO(self) -> bool:
+    def test_SEPO(self) -> bool | None:
         try:
             sepoTag = self.img3.getTagWithMagic(b'SEPO')
         except TagNotFound:
-            return False
+            return
         else:
             sepoTag = sepoTag[0]
 
@@ -124,19 +129,17 @@ class Img3Test:
 
         return True
     
-    def test_KBAG(self) -> bool:
-        pass
+    def test_KBAG(self) -> bool | None:
+        try:
+            self.img3.getTagWithMagic(b'KBAG')
+        except TagNotFound:
+            return
 
-    def test_SHSH(self) -> bool:
+    def test_SHSH(self) -> bool | None:
         try:
             shshTag = self.img3.getTagWithMagic(b'SHSH')
         except TagNotFound:
-            # iOS 2 -> 9
-            if int(self.version.split('.')[0]) <= 9:
-                return False
-            else:
-                # iOS 10 (no SHSH or CERT)
-                return True
+            return
         else:
             shshTag = shshTag[0]
 
@@ -154,16 +157,28 @@ class Img3Test:
         
         return self.img3.verifySHSH()
 
-    def test_CERT(self) -> bool:
-        pass
+    def test_CERT(self) -> bool | None:
+        try:
+            self.img3.getTagWithMagic(b'CERT')
+        except TagNotFound:
+            return
 
     def test_head(self) -> bool:
         head = self.img3.head
-        typeTag = self.img3.getTagWithMagic(b'TYPE')[0]
-        typeIdent = typeTag['data']
+        ident = self.img3.ident
 
-        if typeIdent != head['ident']:
-            raise BadMagic('TYPE does not match head identity!')
+        if ident not in self.img3.valid_types:
+            raise TypeError(f'Bag ident: {ident}')
+
+        try:
+            typeTag = self.img3.getTagWithMagic(b'TYPE')[0]
+        except TagNotFound:
+            pass
+        else:
+            typeIdent = typeTag['data'][::-1]
+
+            if typeIdent != ident:
+                raise BadMagic('TYPE does not match head identity!')
 
         fullSize = self.img3.img3_head_size
         sigCheckArea = 0

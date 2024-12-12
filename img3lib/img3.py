@@ -104,7 +104,8 @@ class Img3Tag:
 
     valid_boards = (
         0, 2, 4,
-        8, 10, 14
+        6, 8, 10,
+        14
     )
 
     valid_chips = (

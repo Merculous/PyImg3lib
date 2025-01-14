@@ -1,7 +1,8 @@
 
 import lzss
+from binpatch.utils import getBufferAtIndex
 
-from .utils import formatData, getBufferAtIndex, getKernelChecksum
+from .utils import formatData, getKernelChecksum
 
 
 class LZSS:

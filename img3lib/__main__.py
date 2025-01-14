@@ -3,7 +3,7 @@ from argparse import ArgumentParser
 from binascii import hexlify
 
 from .img3 import Img3File
-from .utils import readBinaryFile, writeBinaryFile, readPlist
+from .utils import readBinaryFile, readPlist, writeBinaryFile
 
 
 def main():
@@ -35,8 +35,8 @@ def main():
     args = parser.parse_args()
 
     if args.i:
-        in_data = readBinaryFile(args.i[0])
-        img3file = Img3File(in_data)
+        inData = readBinaryFile(args.i[0])
+        img3file = Img3File(inData)
 
         # Set iv and key if user specifies, however not all
         # images are encrypted. Also iOS 10 images should not be

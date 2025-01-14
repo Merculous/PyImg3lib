@@ -2,7 +2,6 @@
 import asn1
 from Crypto.PublicKey import RSA
 
-
 # TODO
 # A lot of this code was helped with ChatGPT.
 # I need to continue working on this code so

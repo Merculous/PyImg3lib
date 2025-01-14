@@ -1,34 +1,16 @@
 
 from binascii import hexlify
 
-from .der import (
-    extractNestedImages,
-    extractPublicKeyFromDER
-)
-from .kpwn import (
-    N72_SHELLCODE_ADDRESS,
-    N88_SHELLCODE_ADDRESS,
-    N72_24KPWN_SIZE,
-    N88_24KPWN_SIZE,
-    KPWN_SHELLCODE_OFFSET,
-    KPWN_BOOTSTRAP_OFFSET,
-    N72_BOOTSTRAP,
-    N88_BOOTSTRAP,
-    N72_SHELLCODE,
-    N88_SHELLCODE
-)
-from .lzsscode import (
-    LZSS
-)
-from .utils import (
-    doAES,
-    doRSACheck,
-    formatData,
-    getBufferAtIndex,
-    getSimilarityBetweenData,
-    isAligned,
-    pad
-)
+from binpatch.utils import getBufferAtIndex
+
+from .der import extractNestedImages, extractPublicKeyFromDER
+from .kpwn import (KPWN_BOOTSTRAP_OFFSET, KPWN_SHELLCODE_OFFSET,
+                   N72_24KPWN_SIZE, N72_BOOTSTRAP, N72_SHELLCODE,
+                   N72_SHELLCODE_ADDRESS, N88_24KPWN_SIZE, N88_BOOTSTRAP,
+                   N88_SHELLCODE, N88_SHELLCODE_ADDRESS)
+from .lzsscode import LZSS
+from .utils import (doAES, doRSACheck, formatData, getSimilarityBetweenData,
+                    isAligned, pad)
 
 
 class BadMagic(Exception):
@@ -72,6 +54,10 @@ class BadBORDValue(Exception):
 
 
 class BadCHIPValue(Exception):
+    pass
+
+
+class BadDATA(Exception):
     pass
 
 

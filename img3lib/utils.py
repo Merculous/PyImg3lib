@@ -1,7 +1,6 @@
 
 import plistlib
 import struct
-
 from difflib import SequenceMatcher
 from hashlib import sha1
 from zlib import adler32
@@ -75,29 +74,6 @@ def getKernelChecksum(data):
 
 def getSHA1(data):
     return sha1(data).hexdigest()
-
-
-def getBufferAtIndex(data, index, length):
-    if not data:
-        raise Exception('Data is empty!')
-
-    if index not in range(len(data)):
-        raise Exception('Index error!')
-
-    if length == 0:
-        raise Exception('Length must not be 0!')
-
-    buffer = data[index:index+length]
-
-    if not buffer:
-        raise Exception('Buffer is empty!')
-
-    buffer_len = len(buffer)
-
-    if buffer_len != length:
-        raise Exception(f'Buffer length mismatch! Got {buffer_len}')
-
-    return buffer
 
 
 def formatData(format, data, pack=True):

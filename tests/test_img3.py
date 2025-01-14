@@ -4,20 +4,15 @@ import plistlib
 import sys
 from pathlib import Path
 
-from img3lib.img3 import (
-    AlignmentError,
-    BadBORDValue,
-    Img3File,
-    BadMagic,
-    SizeError,
-    TagNotFound,
-    BadSEPOValue,
-    BadCHIPValue
-)
-from img3lib.der import decodeDER
-from img3lib.utils import formatData, getBufferAtIndex, isAligned
+from binpatch.utils import getBufferAtIndex
 from lykos.client import Client
 from lykos.errors import PageNotFound
+
+from img3lib.der import decodeDER
+from img3lib.img3 import (AlignmentError, BadBORDValue, BadCHIPValue, BadDATA,
+                          BadMagic, BadSEPOValue, Img3File, SizeError,
+                          TagNotFound)
+from img3lib.utils import formatData, isAligned
 
 
 def getPaths(path: str) -> list[Path]:
@@ -93,8 +88,14 @@ class Img3Test:
         isKernel = True if self.img3.ident == b'krnl' else False
 
         oldData = self.img3.extractDATA()
+        oldHash = hash(oldData)
 
         decryptedData = self.img3.decrypt()
+        decryptedHash = hash(decryptedData)
+
+        if oldHash == decryptedHash and self.img3.image_encrypted:
+            # Decryption made no impact.
+            raise BadDATA('Decryption made no impact. Assuming decryption did not work!')
 
         if isKernel:
             # Decompress
@@ -109,8 +110,9 @@ class Img3Test:
         self.img3.replaceDATA(encryptedData)
 
         newData = self.img3.extractDATA()
+        newHash = hash(newData)
 
-        return hash(oldData) == hash(newData)
+        return oldHash == newHash
     
     def test_VERS(self) -> bool | None:
         try:

@@ -95,8 +95,8 @@ class Img3Tag:
     )
 
     valid_chips = (
-        0x8930, 0x8940, 0x8942,
-        0x8950
+        0x8920, 0x8930, 0x8940,
+        0x8942, 0x8950
     )
 
     def makeTag(self, magic, data):

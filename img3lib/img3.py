@@ -608,4 +608,9 @@ def getNestedImg3FromCERT(certTag: img3tag) -> img3 | None:
     if not img3Data:
         return
 
-    return readImg3(img3Data)
+    try:
+        img3Obj = readImg3(img3Data)
+    except ValueError:
+        return
+    else:
+        return img3Obj

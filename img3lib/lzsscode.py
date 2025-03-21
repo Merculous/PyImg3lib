@@ -1,127 +1,87 @@
 
+from dataclasses import astuple
+from struct import pack, unpack
+from zlib import adler32
+
 import lzss
-from binpatch.utils import getBufferAtIndex
 
-from .utils import formatData, getKernelChecksum
+from .types import PrelinkedKernelHeader
+
+LZSS_HEAD_SIZE = 0x180
+LZSS_STRUCT_SIZE = 0x18
+LZSS_PADDING_SIZE = LZSS_HEAD_SIZE - LZSS_STRUCT_SIZE
+LZSS_PADDING_DATA = b'\x00' * LZSS_PADDING_SIZE
+LZSS_SIGNATURE = b'comp'
+LZSS_COMPRESSTYPE = b'lzss'
+
+def compress(data: bytes, kASLRSupported: bool) -> bytes:
+    if not isinstance(data, bytes):
+        raise TypeError
+
+    if not isinstance(kASLRSupported, bool):
+        raise TypeError
+
+    compressedData = lzss.compress(data)
+
+    header = PrelinkedKernelHeader(
+        LZSS_SIGNATURE,
+        LZSS_COMPRESSTYPE,
+        adler32(data),
+        len(data),
+        len(compressedData),
+        1 if kASLRSupported else 0
+    )
+
+    headerPacked = pack('>4s4s4I', *astuple(header))
+    newData = headerPacked + LZSS_PADDING_DATA + compressedData
+    return newData
 
 
-class LZSS:
-    lzss_head = 0x18
-    lzss_end = 0x180
-    lzss_padding = lzss_end - lzss_head
+def decompress(data: bytes) -> bytes:
+    header = PrelinkedKernelHeader(*unpack('>4s4s4I', data[:LZSS_STRUCT_SIZE]))
 
-    def __init__(self, data, kaslr) -> None:
-        self.data = data
+    if not isinstance(header.signature, bytes):
+        raise TypeError
 
-        self.mode = None
+    if not isinstance(header.compressType, bytes):
+        raise TypeError
 
-        # kASLR true if LC_DYSYMTAB load command exists in macho
+    if not isinstance(header.adler32, int):
+        raise TypeError
 
-        self.version = 1 if kaslr else 0
+    if not isinstance(header.uncompressedSize, int):
+        raise TypeError
 
-    def determineMode(self):
-        buffer = getBufferAtIndex(self.data, 0, 8)
+    if not isinstance(header.compressedSize, int):
+        raise TypeError
 
-        mode = None
+    if not isinstance(header.prelinkVersion, int):
+        raise TypeError
 
-        if buffer == b'complzss':
-            mode = 'decompress'
+    if header.signature != LZSS_SIGNATURE:
+        raise ValueError(f'Unknown signature. Expected {LZSS_SIGNATURE}, got {header.signature}!')
 
-        else:
-            head = getBufferAtIndex(buffer, 0, 4)
+    if header.compressType != LZSS_COMPRESSTYPE:
+        raise ValueError(f'Unknown compress type. Expected {LZSS_COMPRESSTYPE}, got {header.compressType}!')
 
-            head = formatData('<I', head, False)[0].to_bytes(4)
+    realData = data[LZSS_HEAD_SIZE:]
+    realDataSize = len(realData)
 
-            kernel_magic = b'\xfe\xed\xfa\xce'
+    if realDataSize != header.compressedSize:
+        raise ValueError(f'Size mismatch! Expected {header.compressedSize}, got {realDataSize}!')
 
-            if head == kernel_magic:
-                mode = 'compress'
+    uncompressedData = lzss.decompress(realData)
+    uncompressedDataSize = len(uncompressedData)
 
-        return mode
+    if uncompressedDataSize != header.uncompressedSize:
+        raise ValueError(f'Size mismatch! Expected {header.uncompressedSize}, got {uncompressedDataSize}!')
 
-    def compress(self):
-        compressed = lzss.compress(self.data)
-        compressed_len = len(compressed)
+    checksum = adler32(uncompressedData)
 
-        to_pack = (
-            b'comp',
-            b'lzss',
-            getKernelChecksum(self.data),
-            len(self.data),
-            compressed_len,
-            self.version
-        )
+    if checksum != header.adler32:
+        raise ValueError('Adler32 mismatch!')
 
-        head = formatData('>4s4s4I', to_pack)
+    if header.prelinkVersion not in (0, 1):
+        raise ValueError(f'Unknown prelinkVersion! Expected 0 or 1, got {header.prelinkVersion}!')
 
-        if len(head) != self.lzss_head:
-            raise Exception('Packed length is not 0x18!')
-
-        head_with_padding = head + (b'\x00' * self.lzss_padding)
-
-        if len(head_with_padding) != self.lzss_end:
-            raise Exception('Head + padding length is not 0x180!')
-
-        final = head_with_padding + compressed
-
-        return final
-
-    def decompress(self):
-        head = getBufferAtIndex(self.data, 0, self.lzss_head)
-
-        (
-            signature,
-            compression_type,
-            checksum,
-            decompressed_len,
-            compressed_len,
-            version
-        ) = formatData('>4s4s4I', head, False)
-
-        self.version = version
-
-        if signature != b'comp':
-            raise Exception('Signature is not comp!')
-
-        if compression_type != b'lzss':
-            raise Exception('Compression is not lzss!')
-
-        expected_len = len(self.data) - self.lzss_end
-
-        if expected_len != compressed_len:
-            raise Exception('Compressed length does not match!')
-
-        data = getBufferAtIndex(self.data, self.lzss_end, expected_len)
-
-        # Check decompressed data length
-
-        decompressed_data = lzss.decompress(data)
-        decompressed_data_len = len(decompressed_data)
-
-        if decompressed_data_len != decompressed_len:
-            raise Exception('Decompressed length does not match!')
-
-        # Do adler32 (cheksum) on decompressed data
-
-        decompressed_checksum = getKernelChecksum(decompressed_data)
-
-        if decompressed_checksum != checksum:
-            raise Exception('Adler32 does not match!')
-
-        return decompressed_data
-
-    def go(self):
-        data = None
-
-        self.mode = self.determineMode()
-
-        if self.mode == 'compress':
-            data = self.compress()
-
-        elif self.mode == 'decompress':
-            data = self.decompress()
-
-        else:
-            raise Exception(f'Unknown mode: {self.mode}')
-
-        return data
+    return uncompressedData

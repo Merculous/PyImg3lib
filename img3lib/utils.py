@@ -1,23 +1,11 @@
 
-import plistlib
-import struct
-from difflib import SequenceMatcher
-from hashlib import sha1
-from zlib import adler32
-
 from Crypto.Cipher import AES
 from Crypto.Hash import SHA1
 from Crypto.Signature import pkcs1_15
 
 
-def readBinaryFile(path):
-    with open(path, 'rb') as f:
-        return f.read()
-
-
-def writeBinaryFile(path, data):
-    with open(path, 'wb') as f:
-        f.write(data)
+def doSHA1(buffer: bytes) -> bytes:
+    return SHA1.new(buffer).digest()
 
 
 def doAES(encrypt, aes_type, data, iv, key):
@@ -68,45 +56,23 @@ def doAES(encrypt, aes_type, data, iv, key):
     return data
 
 
-def getKernelChecksum(data):
-    return adler32(data)
+def isAligned(n: int, align: int) -> bool:
+    if not isinstance(n, int):
+        raise TypeError
 
+    if not isinstance(align, int):
+        raise TypeError
 
-def getSHA1(data):
-    return sha1(data).hexdigest()
-
-
-def formatData(format, data, pack=True):
-    formatted_data = None
-
-    # Use "*" if we are given a list/tuple
-    unpack_var = False
-
-    if isinstance(data, list) or isinstance(data, tuple):
-        unpack_var = True
-
-    if pack is True:
-        if unpack_var:
-            formatted_data = struct.pack(format, *data)
-        else:
-            formatted_data = struct.pack(format, data)
-
-    elif pack is False:
-        if unpack_var:
-            formatted_data = struct.unpack(format, *data)
-        else:
-            formatted_data = struct.unpack(format, data)
-    else:
-        raise ValueError(f'Expected pack as bool, got: {type(pack)}')
-
-    return formatted_data
-
-
-def isAligned(n, align):
     return n % align == 0
 
 
-def padNumber(n, align):
+def padNumber(n: int, align: int) -> int:
+    if not isinstance(n, int):
+        raise TypeError
+
+    if not isinstance(align, int):
+        raise TypeError
+
     paddedSize = n
 
     while not isAligned(paddedSize, align):
@@ -115,7 +81,13 @@ def padNumber(n, align):
     return paddedSize
 
 
-def pad(padSize, data):
+def pad(padSize: int, data: bytes) -> bytes:
+    if not isinstance(padSize, int):
+        raise TypeError
+
+    if not isinstance(data, bytes):
+        raise TypeError
+
     dataSize = len(data)
     paddedSize = padNumber(dataSize, padSize)
     paddingSize = paddedSize - dataSize
@@ -135,12 +107,3 @@ def doRSACheck(key, sig, data):
         pass
 
     return valid
-
-
-def readPlist(path):
-    with open(path, 'rb') as f:
-        return plistlib.load(f)
-
-
-def getSimilarityBetweenData(src1, src2):
-    return SequenceMatcher(a=src1, b=src2).ratio()

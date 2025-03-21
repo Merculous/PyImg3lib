@@ -1,20 +1,23 @@
 
 from argparse import ArgumentParser
-from binascii import hexlify
+from pathlib import Path
 
-from .img3 import Img3File
-from .utils import readBinaryFile, readPlist, writeBinaryFile
+from .img3 import (dataTagPaddingIsZeroed, findDifferencesBetweenTwoImg3s,
+                   getTagWithMagic, handleKernelData, img3Decrypt, img3Encrypt,
+                   img3ToBytes, makeTag, parseKBAG, printImg3Info, printKBAG,
+                   readImg3, replaceTagInImg3Obj, verifySHSH)
+from .io import readBytesFromPath, writeBytesToPath
 
 
 def main():
     parser = ArgumentParser()
 
-    parser.add_argument('-i', nargs=1, help='input file (img3)', metavar='img3')
-    parser.add_argument('-o', nargs=1, help='output file', metavar='')
-
-    parser.add_argument('--data', nargs=1, help='data for DATA tag', metavar='')
-    parser.add_argument('--diff', nargs=1, help='diff two img3 files', metavar='img3')
-    parser.add_argument('--blob', nargs=1, help='sign and personalize an img3', metavar='')
+    parser.add_argument('-i', help='input file (img3)', metavar='img3', type=Path)
+    parser.add_argument('-o', help='output file', metavar='', type=Path)
+ 
+    parser.add_argument('--data', help='data for DATA tag', metavar='', type=Path)
+    parser.add_argument('--diff', help='diff two img3 files', metavar='img3', type=Path)
+    # parser.add_argument('--blob', help='sign and personalize an img3', metavar='', type=Path)
 
     parser.add_argument('-a', action='store_true', help='print all img3 info')
     parser.add_argument('-d', action='store_true', help='decrypt')
@@ -22,140 +25,128 @@ def main():
     parser.add_argument('-v', action='store_true', help='verify SHSH')
 
     parser.add_argument('--cert', action='store_true', help='extract CERT data')
-    parser.add_argument('--kpwn', action='store_true', help='make a 24KPWN LLB')
-    parser.add_argument('--n72', action='store_true', help='N72/iPod use with --kpwn')
-    parser.add_argument('--n88', action='store_true', help='N88/3GS use with --kpwn')
+    # parser.add_argument('--kpwn', action='store_true', help='make a 24KPWN LLB')
+    # parser.add_argument('--n72', action='store_true', help='N72/iPod use with --kpwn')
+    # parser.add_argument('--n88', action='store_true', help='N88/3GS use with --kpwn')
     parser.add_argument('--lzss', action='store_true', help='(de)compress kernel DATA')
     parser.add_argument('--kaslr', action='store_true', help='kernel supports kASLR (iOS 6+)')
     parser.add_argument('--kbag', action='store_true', help='decrypt KBAG(s)')
 
-    parser.add_argument('-iv', nargs=1, metavar='iv')
-    parser.add_argument('-k', nargs=1, metavar='key')
+    parser.add_argument('-iv', metavar='iv', type=str)
+    parser.add_argument('-k', metavar='key', type=str)
 
     args = parser.parse_args()
 
-    if args.i:
-        inData = readBinaryFile(args.i[0])
-        img3file = Img3File(inData)
+    if not args.i:
+        return parser.print_help()
 
-        # Set iv and key if user specifies, however not all
-        # images are encrypted. Also iOS 10 images should not be
-        # encrypted anyway.
+    inData = readBytesFromPath(args.i)
+    img3Obj = readImg3(inData)
+
+    if args.d and args.o:
+        dataTag = getTagWithMagic(img3Obj, b'DATA')
+
+        if not dataTag:
+            return print('This image does not contain a DATA tag!')
+
+        dataTag = dataTag[0]
+        kbagTag = getTagWithMagic(img3Obj, b'KBAG')
+
+        if not kbagTag:
+            return print('This image does not contain a KBAG tag!')
+
+        kbagTag = kbagTag[0]
+        kbagObj = parseKBAG(kbagTag)
+        decryptedDataTag, _ = img3Decrypt(dataTag, kbagObj.aesType, args.iv, args.k)
+
+        if args.lzss:
+            decryptedDataTag = handleKernelData(decryptedDataTag)
+
+        return writeBytesToPath(args.o, decryptedDataTag.data)
+
+    if args.data and args.o:
+        newData = readBytesFromPath(args.data)
+        newDataTag = makeTag(b'DATA', newData)
+
+        if args.lzss:
+            newDataTag = handleKernelData(newDataTag, args.kaslr)
 
         if args.iv and args.k:
-            img3file.iv = args.iv[0]
-            img3file.key = args.k[0]
+            kbagTag = getTagWithMagic(img3Obj, b'KBAG')
 
-        if args.d and args.o:
-            data = None
+            if not kbagTag:
+                return print('This image does not contain a KBAG tag!')
 
-            decrypted = img3file.decrypt()
+            kbagTag = kbagTag[0]
+            kbagObj = parseKBAG(kbagTag)
+            origDataTag = getTagWithMagic(img3Obj, b'DATA')
 
-            if args.lzss:
-                data = img3file.handleKernelData(decrypted)
-            else:
-                data = decrypted
+            if not origDataTag:
+                return print('This image does not contain a DATA tag!')
 
-            writeBinaryFile(args.o[0], data)
+            origDataTag = origDataTag[0]
+            origDataPaddingZeroed = dataTagPaddingIsZeroed(origDataTag)
+            newDataTag = img3Encrypt(newDataTag, kbagObj.aesType, args.iv, args.k, origDataPaddingZeroed)
 
-        elif not args.d and args.data and args.o:
-            data = readBinaryFile(args.data[0])
+        newImg3 = replaceTagInImg3Obj(img3Obj, newDataTag)
+        img3Data = img3ToBytes(newImg3)
+        return writeBytesToPath(args.o, img3Data)
 
-            to_encrypt = None
+    if args.diff:
+        secondImg3Data = readBytesFromPath(args.diff)
+        secondImg3 = readImg3(secondImg3Data)
+        return findDifferencesBetweenTwoImg3s(img3Obj, secondImg3)
 
-            if args.lzss:
-                to_encrypt = img3file.handleKernelData(data, args.kaslr)
-            else:
-                to_encrypt = data
+    if args.a:
+        return printImg3Info(img3Obj)
 
-            encrypted = img3file.encrypt(to_encrypt)
+    if args.o and args.cert:
+        certTag = getTagWithMagic(img3Obj, b'CERT')
 
-            img3file.replaceDATA(encrypted)
+        if not certTag:
+            return print('This image does not contain a CERT tag!')
 
-            new_img3 = img3file.updateImg3Data()
+        certTag = certTag[0]
+        return writeBytesToPath(args.o, certTag.data)
 
-            writeBinaryFile(args.o[0], new_img3)
+    if args.o and args.x:
+        dataTag = getTagWithMagic(img3Obj, b'DATA')
 
-        elif args.kpwn and args.o:
-            isN88 = None
+        if not dataTag:
+            return print('This image does not contain a DATA tag!')
 
-            if args.n72:
-                isN88 = False
+        dataTag = dataTag[0]
+        return writeBytesToPath(args.o, dataTag.data)
 
-            elif args.n88:
-                isN88 = True
+    if args.v:
+        shshValid = verifySHSH(img3Obj)
 
-            else:
-                print('Please provide either --n72 or --n88!')
-                return
+        if shshValid is None:
+            print('This image does not contain a CERT or SHSH tag!')
 
-            pwned_llb = img3file.do24KPWN(isN88)
+        elif shshValid is True:
+            print('Image: Valid!')
 
-            writeBinaryFile(args.o[0], pwned_llb)
+        elif shshValid is False:
+            print('Image: Invalid!')
 
-        elif args.cert and args.o:
-            cert_data = img3file.extractCertificate()
+        else:
+            print('Unknown SHSH verify outcome!')
 
-            writeBinaryFile(args.o[0], cert_data)
+        return
 
-        elif args.x and args.o:
-            data = b''.join(img3file.extractDATA())
+    if args.kbag:
+        kbagTags = getTagWithMagic(img3Obj, b'KBAG')
 
-            writeBinaryFile(args.o[0], data)
+        if not kbagTags:
+            return print('This image does not contain a KBAG tag!')
 
-        elif args.a:
-            img3file.printImg3Info()
+        for tag in kbagTags:
+            printKBAG(tag)
 
-        elif args.diff:
-            data = readBinaryFile(args.diff[0])
+        return
 
-            new_img3 = Img3File(data)
-
-            img3file.findDifferences(new_img3)
-
-        elif args.v:
-            shshValid = img3file.verifySHSH()
-
-            if shshValid is None:
-                print('SHSH tag not found. Cannot validate!')
-                return
-
-            print(f'SHSH is {"VALID" if shshValid else "INVALID"}')
-
-        elif args.blob and args.o:
-            shshBlobs = readPlist(args.blob[0])
-            signed = img3file.sign(shshBlobs)
-            verify = Img3File(signed).verifySHSH()
-
-            if not verify:
-                raise Exception('Failed to sign!')
-
-            return writeBinaryFile(args.o[0], signed)
-
-        elif args.kbag:
-            kbags = img3file.prepareKBAGS()
-
-            if not args.d:
-                for isRelease, kbag in kbags:
-                    print(f'Release: {isRelease}')
-                    print(f'KBAG: {hexlify(kbag).decode()}')
-
-                return
-
-            if args.k:
-                for isRelease, kbag in kbags:
-                    if not isRelease:
-                        continue
-
-                    break
-
-                iv, key = img3file.decryptKBAG(kbag, b''.fromhex(args.k[0]))
-
-                print(f'IV: {hexlify(iv).decode()}')
-                print(f'Key: {hexlify(key).decode()}')
-
-    else:
-        parser.print_help()
+    pass
 
 
 if __name__ == '__main__':

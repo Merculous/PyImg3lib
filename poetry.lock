@@ -2,13 +2,13 @@
 
 [[package]]
 name = "asn1"
-version = "2.7.1"
+version = "2.8.0"
 description = "Python-ASN1 is a simple ASN.1 encoder and decoder for Python 2.7+ and 3.5+."
 optional = false
 python-versions = "*"
 files = [
-    {file = "asn1-2.7.1-py2.py3-none-any.whl", hash = "sha256:92785400ca4c7d00e255ccbae9b50b6b7bfcc44ed7c41c87ba69893dfc47ab62"},
-    {file = "asn1-2.7.1.tar.gz", hash = "sha256:c00e37a58d25912dc7c7536770490644ab8e0305f5adc28cf7eebee32e2703c2"},
+    {file = "asn1-2.8.0-py2.py3-none-any.whl", hash = "sha256:1438ac9a53cbc4064330af43b054ae042374f7c8ab46c55358241c15e29f1461"},
+    {file = "asn1-2.8.0.tar.gz", hash = "sha256:adf77ddc2707cf420c0eae3b99ee30e913afcf0936467d42669820ce6b7d150a"},
 ]
 
 [package.dependencies]
@@ -16,13 +16,13 @@ enum-compat = "*"
 
 [[package]]
 name = "certifi"
-version = "2024.12.14"
+version = "2025.1.31"
 description = "Python package for providing Mozilla's CA Bundle."
 optional = false
 python-versions = ">=3.6"
 files = [
-    {file = "certifi-2024.12.14-py3-none-any.whl", hash = "sha256:1275f7a45be9464efc1173084eaa30f866fe2e47d389406136d332ed4967ec56"},
-    {file = "certifi-2024.12.14.tar.gz", hash = "sha256:b650d30f370c2b724812bee08008be0c4163b163ddaec3f2546c1caf65f191db"},
+    {file = "certifi-2025.1.31-py3-none-any.whl", hash = "sha256:ca78db4565a652026a4db2bcdf68f2fb589ea80d0be70e03929ed730746b84fe"},
+    {file = "certifi-2025.1.31.tar.gz", hash = "sha256:3d5da6925056f6f18f119200434a4780a94263f10d1c21d032a6f6b2baa20651"},
 ]
 
 [[package]]

@@ -3,9 +3,10 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 from .img3 import (dataTagPaddingIsZeroed, findDifferencesBetweenTwoImg3s,
-                   getTagWithMagic, handleKernelData, img3Decrypt, img3Encrypt,
-                   img3ToBytes, makeTag, parseKBAG, printImg3Info, printKBAG,
-                   readImg3, replaceTagInImg3Obj, verifySHSH)
+                   getNestedImg3FromCERT, getTagWithMagic, handleKernelData,
+                   img3Decrypt, img3Encrypt, img3ToBytes, makeTag, parseKBAG,
+                   printImg3Info, printKBAG, readImg3, replaceTagInImg3Obj,
+                   verifySHSH)
 from .io import readBytesFromPath, writeBytesToPath
 
 
@@ -97,6 +98,20 @@ def main():
         secondImg3 = readImg3(secondImg3Data)
         return findDifferencesBetweenTwoImg3s(img3Obj, secondImg3)
 
+    if args.a and args.cert:
+        certTag = getTagWithMagic(img3Obj, b'CERT')
+
+        if not certTag:
+            return print('This image does not contain a CERT tag!')
+
+        certTag = certTag[0]
+        nestedImg3 = getNestedImg3FromCERT(certTag)
+
+        if not nestedImg3:
+            return print('CERT does not have a nested img3!')
+
+        return printImg3Info(nestedImg3)
+
     if args.a:
         return printImg3Info(img3Obj)
 
@@ -145,8 +160,6 @@ def main():
             printKBAG(tag)
 
         return
-
-    pass
 
 
 if __name__ == '__main__':

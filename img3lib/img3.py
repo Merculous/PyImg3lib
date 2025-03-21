@@ -2,10 +2,10 @@
 from binascii import hexlify
 from struct import pack, unpack
 
-from .der import extractPublicKeyFromDER
+from .der import extractNestedImages, extractPublicKeyFromDER
 from .lzsscode import compress, decompress
 from .types import img3, img3tag, kbag
-from .utils import doAES, doRSACheck, doSHA1, isAligned, pad
+from .utils import doAES, doRSACheck, isAligned, pad
 
 IMG3_MAGIC = b'Img3'
 
@@ -591,3 +591,21 @@ def verifySHSH(img3Obj: img3) -> bool | None:
     shshTagDataStart = getTagOffsetInImg3(img3Obj, b'SHSH')
     img3SHA1Data = img3ToBytes(img3Obj)[TAG_HEAD_SIZE:shshTagDataStart]
     return doRSACheck(publicKey, shshTag.data, img3SHA1Data)
+
+
+def getNestedImg3FromCERT(certTag: img3tag) -> img3 | None:
+    if not isinstance(certTag, img3tag):
+        raise TypeError
+
+    if getTagMagic(certTag) != b'CERT':
+        raise ValueError('Incorrect img3tag type!')
+
+    img3Data = extractNestedImages(certTag.data)
+
+    if not isinstance(img3Data, bytes):
+        raise TypeError
+
+    if not img3Data:
+        return
+
+    return readImg3(img3Data)

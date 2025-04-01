@@ -4,9 +4,9 @@ from pathlib import Path
 
 from .img3 import (dataTagPaddingIsZeroed, findDifferencesBetweenTwoImg3s,
                    getNestedImg3FromCERT, getTagWithMagic, handleKernelData,
-                   img3Decrypt, img3Encrypt, img3ToBytes, makeTag, parseKBAG,
-                   printImg3Info, printKBAG, readImg3, replaceTagInImg3Obj,
-                   verifySHSH)
+                   img3Decrypt, img3Encrypt, img3ToBytes, make24KPWNLLB,
+                   makeTag, parseKBAG, printImg3Info, printKBAG, readImg3,
+                   replaceTagInImg3Obj, verifySHSH)
 from .io import readBytesFromPath, writeBytesToPath
 
 
@@ -26,9 +26,9 @@ def main():
     parser.add_argument('-v', action='store_true', help='verify SHSH')
 
     parser.add_argument('--cert', action='store_true', help='extract CERT data')
-    # parser.add_argument('--kpwn', action='store_true', help='make a 24KPWN LLB')
-    # parser.add_argument('--n72', action='store_true', help='N72/iPod use with --kpwn')
-    # parser.add_argument('--n88', action='store_true', help='N88/3GS use with --kpwn')
+    parser.add_argument('--kpwn', action='store_true', help='make a 24KPWN LLB')
+    parser.add_argument('--n72', action='store_true', help='N72/iPod use with --kpwn')
+    parser.add_argument('--n88', action='store_true', help='N88/3GS use with --kpwn')
     parser.add_argument('--lzss', action='store_true', help='(de)compress kernel DATA')
     parser.add_argument('--kaslr', action='store_true', help='kernel supports kASLR (iOS 6+)')
     parser.add_argument('--kbag', action='store_true', help='decrypt KBAG(s)')
@@ -160,6 +160,10 @@ def main():
             printKBAG(tag)
 
         return
+
+    if args.kpwn and args.o:
+        kpwnImg3 = make24KPWNLLB(img3Obj, args.n72, args.n88)
+        return writeBytesToPath(args.o, img3ToBytes(kpwnImg3))
 
 
 if __name__ == '__main__':

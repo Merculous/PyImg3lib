@@ -3,6 +3,10 @@ from binascii import hexlify
 from struct import pack, unpack
 
 from .der import extractNestedImages, extractPublicKeyFromDER
+from .kpwn import (KPWN_BOOTSTRAP_OFFSET, KPWN_SHELLCODE_OFFSET,
+                   N72_24KPWN_SIZE, N72_BOOTSTRAP, N72_SHELLCODE,
+                   N72_SHELLCODE_ADDRESS, N88_24KPWN_SIZE, N88_BOOTSTRAP,
+                   N88_SHELLCODE, N88_SHELLCODE_ADDRESS)
 from .lzsscode import compress, decompress
 from .types import img3, img3tag, kbag
 from .utils import doAES, doRSACheck, isAligned, pad
@@ -614,3 +618,131 @@ def getNestedImg3FromCERT(certTag: img3tag) -> img3 | None:
         return
     else:
         return img3Obj
+
+
+def removeTagFromImg3(img3Obj: img3, magic: bytes, removeAll: bool = False) -> img3:
+    if not isinstance(img3Obj, img3):
+        raise TypeError
+
+    if not img3Obj.tags:
+        return img3Obj
+
+    if not isinstance(magic, bytes):
+        raise TypeError
+
+    if magic not in TAGS:
+        raise ValueError(f'Unknown magic: {magic}!')
+
+    if not isinstance(removeAll, bool):
+        raise TypeError
+
+    tagIndexes = tagExists(img3Obj, magic)
+
+    if not tagIndexes:
+        return img3Obj
+
+    if not removeAll:
+        tagIndexes = tagIndexes[:1]
+
+    tags = []
+
+    for i, tag in enumerate(img3Obj.tags):
+        if i in tagIndexes:
+            continue
+
+        tags.append(tag)
+
+    img3Obj.tags = tags
+    return img3Obj
+
+
+def make24KPWNLLB(img3Obj: img3, isN72: bool, isN88: bool) -> img3:
+    if not isinstance(img3Obj, img3):
+        raise TypeError
+    
+    if not isinstance(img3Obj.tags, list):
+        raise TypeError
+    
+    if not img3Obj.tags:
+        raise ValueError('This image does not have any tags!')
+
+    if not isinstance(isN72, bool):
+        raise TypeError
+
+    if not isinstance(isN88, bool):
+        raise TypeError
+
+    if isN72 and isN88:
+        raise ValueError('Both device conditions ARE set!')
+
+    if not isN72 and not isN88:
+        raise ValueError('Both device condidtions are NOT set!')
+
+    newImg3 = None
+    shellcodeOffset = KPWN_SHELLCODE_OFFSET
+    bootstrapOffset = KPWN_BOOTSTRAP_OFFSET
+    kpwnSize = N72_24KPWN_SIZE if isN72 else N88_24KPWN_SIZE
+    dword = N72_SHELLCODE_ADDRESS if isN72 else N88_SHELLCODE_ADDRESS
+    shellcode = N72_SHELLCODE if isN72 else N88_SHELLCODE
+    bootstrap = N72_BOOTSTRAP if isN72 else N88_BOOTSTRAP
+
+    if isN88:
+        typeTag = getTagWithMagic(img3Obj, b'TYPE')
+
+        if not typeTag:
+            raise ValueError('This image does not contain a TYPE tag!')
+
+        typeTag = typeTag[0]
+        typeTag.padding = b'\x00' * len(typeTag.padding)
+
+        newImg3 = replaceTagInImg3Obj(img3Obj, typeTag)
+    else:
+        newImg3 = removeTagFromImg3(img3Obj, b'TYPE', True)
+
+    if not newImg3:
+        raise ValueError('New Img3 is empty!')
+
+    dataTag = getTagWithMagic(newImg3, b'DATA')
+
+    if not dataTag:
+        raise ValueError('This image does not contain a DATA tag!')
+
+    dataTag = dataTag[0]
+    dataTagDword = dataTag.data[:4]
+    dataTag.data = dword + dataTag.data[4:]
+
+    newImg3 = removeTagFromImg3(newImg3, b'KBAG', True)
+
+    certTag = getTagWithMagic(newImg3, b'CERT')
+
+    if not certTag:
+        raise ValueError('This image does not contain a CERT tag!')
+
+    certTag = certTag[0]
+    certTagData = certTag.data + certTag.padding
+    certTagDataStartPos = getTagOffsetInImg3(img3Obj, b'CERT') + TAG_HEAD_SIZE
+    sizeToFill = kpwnSize - certTagDataStartPos
+    certTagDataPadded = bytearray(pad(sizeToFill, certTagData))
+
+    if isN72:
+        shellcode = shellcode.replace(b'\xdf\xdb\x64\x80', dataTagDword)
+
+    if isN88:
+        shellcode = shellcode.replace(b'\xAA\xBB\xCC\xDD', dataTagDword)
+
+    shellcodeSize = len(shellcode)
+    shellcodeStart = shellcodeOffset - certTagDataStartPos
+    certTagDataPadded[shellcodeStart:shellcodeStart+shellcodeSize] = shellcode
+
+    bootstrapSize = len(bootstrap)
+    bootstrapStart = bootstrapOffset - certTagDataStartPos
+    certTagDataPadded[bootstrapStart:bootstrapStart+bootstrapSize] = bootstrap
+
+    certTagDataPadded = bytes(certTagDataPadded)
+    newCertTag = makeTag(b'CERT', certTagDataPadded)
+    newImg3 = replaceTagInImg3Obj(newImg3, newCertTag)
+
+    if img3Obj.fullSize != kpwnSize:
+        raise ValueError(f'LLB is not of size: {kpwnSize}!')
+
+    return newImg3

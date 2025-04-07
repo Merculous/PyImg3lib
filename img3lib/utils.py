@@ -1,59 +1,63 @@
 
+from io import SEEK_END, SEEK_SET, BytesIO
+
+from binpatch.io import getSizeOfIOStream
 from Crypto.Cipher import AES
 from Crypto.Hash import SHA1
+from Crypto.PublicKey.RSA import RsaKey
 from Crypto.Signature import pkcs1_15
 
+AES_SIZES = {
+    128: 16,
+    192: 24,
+    256: 32
+}
 
-def doSHA1(buffer: bytes) -> bytes:
-    return SHA1.new(buffer).digest()
+
+def doSHA1(buffer: BytesIO) -> BytesIO:
+    if not isinstance(buffer, BytesIO):
+        raise TypeError
+
+    return BytesIO(SHA1.new(buffer.getbuffer()).digest())
 
 
-def doAES(encrypt, aes_type, data, iv, key):
-    if isinstance(aes_type, str):
-        aes_type = int(aes_type)
+def doAES(encrypt: bool, aesType: int, data: BytesIO, iv: BytesIO, key: BytesIO) -> BytesIO:
+    if not isinstance(encrypt, bool):
+        raise TypeError
 
-    if isinstance(iv, str):
-        iv = bytes.fromhex(iv)
+    if not isinstance(aesType, int):
+        raise TypeError
 
-    if isinstance(key, str):
-        key = bytes.fromhex(key)
+    if not isinstance(data, BytesIO):
+        raise TypeError
 
-    iv_len = len(iv)
-    key_len = len(key)
+    if not isinstance(iv, BytesIO):
+        raise TypeError
 
-    if iv_len != 16:
-        raise Exception(f'Bad iv length: {iv_len}')
+    if not isinstance(key, BytesIO):
+        raise TypeError
 
-    if key_len < 16:
-        raise Exception(f'Bag key length: {key_len}')
+    if aesType not in AES_SIZES:
+        raise ValueError(f'Unknown aes type: {aesType}!')
 
-    if aes_type == 128:
-        if key_len > 16:
-            key = key[16:]
+    ivSize = getSizeOfIOStream(iv)
+    keySize = getSizeOfIOStream(key)
 
-    elif aes_type == 192:
-        if key_len > 24:
-            key = key[24:]
+    if ivSize != 16:
+        raise ValueError('IV must be of size: 16')
 
-    elif aes_type == 256:
-        if key_len > 32:
-            key = key[32:]
+    if keySize not in AES_SIZES.values():
+        raise ValueError('Key is not of size: 16, 24, or 32!')
 
+    cipher = AES.new(key.getbuffer(), AES.MODE_CBC, iv=iv.getbuffer())
+    buffer = BytesIO()
+
+    if encrypt:
+        buffer.write(cipher.encrypt(data.getbuffer()))
     else:
-        raise Exception(f'Unknown AES type: {aes_type}')
+        buffer.write(cipher.decrypt(data.getbuffer()))
 
-    cipher = AES.new(key, AES.MODE_CBC, iv)
-
-    if encrypt is True:
-        data = cipher.encrypt(data)
-
-    elif encrypt is False:
-        data = cipher.decrypt(data)
-
-    else:
-        raise Exception(f'Unknown mode: {encrypt}')
-
-    return data
+    return buffer
 
 
 def isAligned(n: int, align: int) -> bool:
@@ -81,27 +85,31 @@ def padNumber(n: int, align: int) -> int:
     return paddedSize
 
 
-def pad(padSize: int, data: bytes) -> bytes:
+def pad(padSize: int, data: BytesIO) -> BytesIO:
     if not isinstance(padSize, int):
         raise TypeError
 
-    if not isinstance(data, bytes):
+    if not isinstance(data, BytesIO):
         raise TypeError
 
-    dataSize = len(data)
+    dataSize = getSizeOfIOStream(data)
     paddedSize = padNumber(dataSize, padSize)
     paddingSize = paddedSize - dataSize
-    data += b'\x00' * paddingSize
+
+    data.seek(0, SEEK_END)
+    data.write(b'\x00' * paddingSize)
+    data.seek(0, SEEK_SET)
+
     return data
 
 
-def doRSACheck(key, sig, data):
-    scheme = pkcs1_15.new(key)
-    dataSHA1 = SHA1.new(data)
+def doRSACheck(rsaKey: RsaKey, rsaSignedData: BytesIO, sha1Data: BytesIO) -> bool:
+    scheme = pkcs1_15.new(rsaKey)
+    dataSHA1 = SHA1.new(sha1Data.getvalue())
     valid = False
 
     try:
-        scheme.verify(dataSHA1, sig)
+        scheme.verify(dataSHA1, rsaSignedData.getvalue())
         valid = True
     except (ValueError, TypeError):
         pass

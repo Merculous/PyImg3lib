@@ -21,3 +21,7 @@ Firmware
 *.der
 *.shsh
 *.shsh2
+._*
+*.zip
+*.zpaq
+*.raw

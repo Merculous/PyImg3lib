@@ -9,8 +9,9 @@ from binpatch.utils import getBufferAtIndex, replaceBufferAtIndex
 from .der import extractNestedImages, extractPublicKeyFromDER
 from .kpwn import (KPWN_BOOTSTRAP_OFFSET, KPWN_SHELLCODE_OFFSET,
                    N72_24KPWN_SIZE, N72_BOOTSTRAP, N72_SHELLCODE,
-                   N72_SHELLCODE_ADDRESS, N88_24KPWN_SIZE, N88_BOOTSTRAP,
-                   N88_SHELLCODE, N88_SHELLCODE_ADDRESS)
+                   N72_SHELLCODE_ADDRESS, N72_SHELLCODE_DWORD_INDEX,
+                   N88_24KPWN_SIZE, N88_BOOTSTRAP, N88_SHELLCODE,
+                   N88_SHELLCODE_ADDRESS, N88_SHELLCODE_DWORD_INDEX)
 from .lzsscode import compress, decompress
 from .types import img3, img3tag, kbag
 from .utils import doAES, doRSACheck, isAligned, pad
@@ -911,6 +912,7 @@ def make24KPWNLLB(img3Obj: img3, isN72: bool, isN88: bool) -> img3:
     dword = N72_SHELLCODE_ADDRESS if isN72 else N88_SHELLCODE_ADDRESS
     shellcode = N72_SHELLCODE if isN72 else N88_SHELLCODE
     bootstrap = N72_BOOTSTRAP if isN72 else N88_BOOTSTRAP
+    dwordIndex = N72_SHELLCODE_DWORD_INDEX if isN72 else N88_SHELLCODE_DWORD_INDEX
 
     if isN88:
         typeTag = getTagWithMagic(img3Obj, BytesIO(b'TYPE'))
@@ -934,8 +936,8 @@ def make24KPWNLLB(img3Obj: img3, isN72: bool, isN88: bool) -> img3:
         raise ValueError('This image does not contain a DATA tag!')
 
     dataTag = dataTag[0]
-    dataTagDword = getBufferAtIndex(dataTag.data, 0, 4).getvalue()
-    dataTag.data = BytesIO(dword + getBufferAtIndex(dataTag.data, 4, dataTag.dataSize - 4).getvalue())
+    dataTagDword = getBufferAtIndex(dataTag.data, 0, 4)
+    dataTag.data = BytesIO(dword.getvalue() + getBufferAtIndex(dataTag.data, 4, dataTag.dataSize - 4).getvalue())
 
     newImg3 = removeTagFromImg3(newImg3, BytesIO(b'KBAG'), True)
 
@@ -950,19 +952,15 @@ def make24KPWNLLB(img3Obj: img3, isN72: bool, isN88: bool) -> img3:
     sizeToFill = kpwnSize - certTagDataStartPos
     certTagDataPadded = pad(sizeToFill, certTagData)
 
-    if isN72:
-        shellcode = shellcode.replace(b'\xdf\xdb\x64\x80', dataTagDword)
+    shellcode = replaceBufferAtIndex(shellcode, dataTagDword, dwordIndex, 4)
 
-    if isN88:
-        shellcode = shellcode.replace(b'\xAA\xBB\xCC\xDD', dataTagDword)
-
-    shellcodeSize = len(shellcode)
+    shellcodeSize = getSizeOfIOStream(shellcode)
     shellcodeStart = shellcodeOffset - certTagDataStartPos
-    certTagDataPadded = replaceBufferAtIndex(certTagDataPadded, BytesIO(shellcode), shellcodeStart, shellcodeSize)
+    certTagDataPadded = replaceBufferAtIndex(certTagDataPadded, shellcode, shellcodeStart, shellcodeSize)
 
-    bootstrapSize = len(bootstrap)
+    bootstrapSize = getSizeOfIOStream(bootstrap)
     bootstrapStart = bootstrapOffset - certTagDataStartPos
-    certTagDataPadded = replaceBufferAtIndex(certTagDataPadded, BytesIO(bootstrap), bootstrapStart, bootstrapSize)
+    certTagDataPadded = replaceBufferAtIndex(certTagDataPadded, bootstrap, bootstrapStart, bootstrapSize)
 
     newCertTag = makeTag(BytesIO(b'CERT'), certTagDataPadded)
     newImg3 = replaceTagInImg3Obj(newImg3, newCertTag)

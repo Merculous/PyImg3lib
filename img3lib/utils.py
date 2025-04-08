@@ -18,6 +18,9 @@ def doSHA1(buffer: BytesIO) -> BytesIO:
     if not isinstance(buffer, BytesIO):
         raise TypeError
 
+    if getSizeOfIOStream(buffer) == 0:
+        raise ValueError('No data to read!')
+
     return BytesIO(SHA1.new(buffer.getbuffer()).digest())
 
 
@@ -39,6 +42,9 @@ def doAES(encrypt: bool, aesType: int, data: BytesIO, iv: BytesIO, key: BytesIO)
 
     if aesType not in AES_SIZES:
         raise ValueError(f'Unknown aes type: {aesType}!')
+
+    if getSizeOfIOStream(data) == 0:
+        raise ValueError('No data to read!')
 
     ivSize = getSizeOfIOStream(iv)
     keySize = getSizeOfIOStream(key)
@@ -93,6 +99,10 @@ def pad(padSize: int, data: BytesIO) -> BytesIO:
         raise TypeError
 
     dataSize = getSizeOfIOStream(data)
+
+    if dataSize == 0:
+        raise ValueError('No data to read!')
+
     paddedSize = padNumber(dataSize, padSize)
     paddingSize = paddedSize - dataSize
 
@@ -104,8 +114,23 @@ def pad(padSize: int, data: BytesIO) -> BytesIO:
 
 
 def doRSACheck(rsaKey: RsaKey, rsaSignedData: BytesIO, sha1Data: BytesIO) -> bool:
+    if not isinstance(rsaKey, RsaKey):
+        raise TypeError
+
+    if not isinstance(rsaSignedData, BytesIO):
+        raise TypeError
+
+    if not isinstance(sha1Data, BytesIO):
+        raise TypeError
+
+    if getSizeOfIOStream(rsaSignedData) == 0:
+        raise ValueError('No data to read!')
+
+    if getSizeOfIOStream(sha1Data) == 0:
+        raise ValueError('No data to read!')
+
     scheme = pkcs1_15.new(rsaKey)
-    dataSHA1 = SHA1.new(sha1Data.getvalue())
+    dataSHA1 = SHA1.new(sha1Data.getbuffer())
     valid = False
 
     try:

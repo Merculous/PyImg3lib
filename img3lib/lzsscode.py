@@ -17,7 +17,7 @@ LZSS_COMPRESSTYPE = BytesIO(b'lzss')
 
 
 def initPrelinkedKernelHeader() -> PrelinkedKernelHeader:
-    return PrelinkedKernelHeader(BytesIO(), BytesIO(), 0, 0, 0, 0 )
+    return PrelinkedKernelHeader(BytesIO(), BytesIO(), 0, 0, 0, 0)
 
 
 def parsePrelinkedKernelHeader(data: BytesIO) -> PrelinkedKernelHeader:
@@ -30,21 +30,21 @@ def parsePrelinkedKernelHeader(data: BytesIO) -> PrelinkedKernelHeader:
         raise ValueError(f'Data buffer must be of size: {LZSS_STRUCT_SIZE}!')
 
     headerData = getBufferAtIndex(data, 0, LZSS_STRUCT_SIZE)
-    headerUnpacked = unpack('>4s4s4I', headerData.getvalue())
+    signature, compressType, adler32, uncompressedSize, compressedSize, prelinkVersion = unpack('>4s4s4I', headerData.getvalue())
 
     header = initPrelinkedKernelHeader()
     header.signature.seek(0, SEEK_SET)
-    header.signature.write(headerUnpacked[0])
+    header.signature.write(signature)
     header.signature.seek(0, SEEK_SET)
 
     header.compressType.seek(0, SEEK_SET)
-    header.compressType.write(headerUnpacked[1])
+    header.compressType.write(compressType)
     header.compressType.seek(0, SEEK_SET)
 
-    header.adler32 = headerUnpacked[2]
-    header.uncompressedSize = headerUnpacked[3]
-    header.compressedSize = headerUnpacked[4]
-    header.prelinkVersion = headerUnpacked[5]
+    header.adler32 = adler32
+    header.uncompressedSize = uncompressedSize
+    header.compressedSize = compressedSize
+    header.prelinkVersion = prelinkVersion
 
     return header
 
@@ -61,6 +61,10 @@ def compress(data: BytesIO, kASLRSupported: bool) -> BytesIO:
         raise TypeError
 
     dataSize = getSizeOfIOStream(data)
+
+    if dataSize == 0:
+        raise ValueError('No data to read!')
+
     uncompressedData = data.getvalue()
     compressedData = BytesIO(lzss.compress(uncompressedData))
 
@@ -85,6 +89,9 @@ def compress(data: BytesIO, kASLRSupported: bool) -> BytesIO:
 def decompress(data: BytesIO) -> BytesIO:
     if not isinstance(data, BytesIO):
         raise TypeError
+    
+    if getSizeOfIOStream(data) == 0:
+        raise ValueError('No data to read!')
 
     headerData = getBufferAtIndex(data, 0, LZSS_STRUCT_SIZE)
     header = parsePrelinkedKernelHeader(headerData)

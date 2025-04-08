@@ -6,6 +6,7 @@ from struct import pack, unpack
 from binpatch.io import getSizeOfIOStream
 from binpatch.utils import getBufferAtIndex, replaceBufferAtIndex
 
+from .crypto import AES_SIZES, doAES, doRSACheck
 from .der import extractNestedImages, extractPublicKeyFromDER
 from .kpwn import (KPWN_BOOTSTRAP_OFFSET, KPWN_SHELLCODE_OFFSET,
                    N72_24KPWN_SIZE, N72_BOOTSTRAP, N72_SHELLCODE,
@@ -14,7 +15,7 @@ from .kpwn import (KPWN_BOOTSTRAP_OFFSET, KPWN_SHELLCODE_OFFSET,
                    N88_SHELLCODE_ADDRESS, N88_SHELLCODE_DWORD_INDEX)
 from .lzsscode import compress, decompress
 from .types import img3, img3tag, kbag
-from .utils import doAES, doRSACheck, isAligned, pad
+from .utils import isAligned, pad
 
 IMG3_MAGIC = b'Img3'
 
@@ -61,11 +62,6 @@ CHIPS = (
     0x8947, 0x8950, 0x8955
 )
 
-AES_SIZES = {
-    128: 16,
-    192: 24,
-    256: 32
-}
 
 def initTag() -> img3tag:
     return img3tag(BytesIO(), 0, 0, BytesIO(), BytesIO())
@@ -575,7 +571,7 @@ def img3Decrypt(dataTag: img3tag, aes: int, iv: BytesIO | None, key: BytesIO | N
     block2Size = dataTag.dataSize & 0xF
 
     block1Data = getBufferAtIndex(dataTag.data, 0, block1Size)
-    block2Data = getBufferAtIndex(dataTag.data, block1Size, block2Size)
+    block2Data = getBufferAtIndex(dataTag.data, block1Size, block2Size) if block2Size >= 1 else BytesIO()
 
     decryptBuffer = block1Data
     paddingIsZeroed = dataTagPaddingIsZeroed(dataTag)
@@ -853,16 +849,19 @@ def getTagOffsetInImg3(img3Obj: img3, magic: BytesIO) -> int:
     if not isinstance(img3Obj.tags, list):
         raise TypeError
 
+    if getSizeOfIOStream(magic) == 0:
+        raise ValueError('No data to read!')
+
     if not img3Obj.tags:
         raise ValueError('No tags are present!')
     
-    if magic not in TAGS:
-        raise ValueError(f'Unknown magic: {magic}!')
+    if magic.getvalue() not in TAGS:
+        raise ValueError(f'Unknown magic: {magic.getvalue()}!')
 
     i = IMG3_HEAD_SIZE
 
     for tag in img3Obj.tags:
-        if getTagMagic(tag).read(4) == magic:
+        if getTagMagic(tag).read(4) == magic.getvalue():
             break
 
         i += tag.totalSize

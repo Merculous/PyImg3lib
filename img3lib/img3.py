@@ -512,6 +512,9 @@ def makeTag(magic: BytesIO, data: BytesIO) -> img3tag:
     if getSizeOfIOStream(magic) < 4:
         raise ValueError('Magic must be at least 4 bytes!')
 
+    if getSizeOfIOStream(data) == 0:
+        raise ValueError('No data to read!')
+
     magic.seek(0, SEEK_SET)
     tagMagic = magic.read(4)
     magic.seek(0, SEEK_SET)
@@ -528,7 +531,7 @@ def makeTag(magic: BytesIO, data: BytesIO) -> img3tag:
 
     tag = initTag()
     tag.magic.seek(0, SEEK_SET)
-    tag.magic.write(magic.getvalue()[::-1])
+    tag.magic.write(magic.read(4)[::-1])
     tag.magic.seek(0, SEEK_SET)
 
     tag.totalSize = TAG_HEAD_SIZE + paddedDataSize
@@ -840,8 +843,11 @@ def printImg3Info(img3Obj: img3) -> None:
             print(f'Padsize: {getTagPadSize(tag)}')
 
 
-def getTagOffsetInImg3(img3Obj: img3, magic: bytes) -> int:
+def getTagOffsetInImg3(img3Obj: img3, magic: BytesIO) -> int:
     if not isinstance(img3Obj, img3):
+        raise TypeError
+
+    if not isinstance(magic, BytesIO):
         raise TypeError
 
     if not isinstance(img3Obj.tags, list):
@@ -894,7 +900,7 @@ def verifySHSH(img3Obj: img3) -> bool | None:
 
     certTag = certTag[0]
     publicKey = extractPublicKeyFromDER(certTag.data)
-    shshTagDataStart = getTagOffsetInImg3(img3Obj, b'SHSH')
+    shshTagDataStart = getTagOffsetInImg3(img3Obj, BytesIO(b'SHSH'))
     img3Data = img3ToBytesIO(img3Obj)
     img3SHA1Data = getBufferAtIndex(img3Data, TAG_HEAD_SIZE, shshTagDataStart)
     return doRSACheck(publicKey, shshTag.data, img3SHA1Data)
@@ -1027,7 +1033,7 @@ def make24KPWNLLB(img3Obj: img3, isN72: bool, isN88: bool) -> img3:
 
     certTag = certTag[0]
     certTagData = BytesIO(certTag.data.getvalue() + certTag.padding.getvalue())
-    certTagDataStartPos = getTagOffsetInImg3(img3Obj, b'CERT') + TAG_HEAD_SIZE
+    certTagDataStartPos = getTagOffsetInImg3(img3Obj, BytesIO(b'CERT')) + TAG_HEAD_SIZE
     sizeToFill = kpwnSize - certTagDataStartPos
     certTagDataPadded = pad(sizeToFill, certTagData)
 

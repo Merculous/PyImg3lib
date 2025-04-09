@@ -2,17 +2,23 @@
 import json
 import plistlib
 import sys
+from io import BytesIO
 from pathlib import Path
+from struct import unpack
 
+from binpatch.io import getSizeOfIOStream
 from binpatch.utils import getBufferAtIndex
 from lykos.client import Client
 from lykos.errors import PageNotFound
 
 from img3lib.der import decodeDER
-from img3lib.img3 import (AlignmentError, BadBORDValue, BadCHIPValue, BadDATA,
-                          BadMagic, BadSEPOValue, Img3File, SizeError,
-                          TagNotFound)
-from img3lib.utils import formatData, isAligned
+from img3lib.img3 import (BORDS, CHIPS, IMG3_HEAD_SIZE, SEPOS, TYPES,
+                          getImg3FullSize, getImg3Ident, getImg3SigCheckArea,
+                          getImg3SizeNoPack, getTagMagic, getTagWithMagic,
+                          handleKernelData, img3Decrypt, img3Encrypt,
+                          parseKBAG, readImg3, replaceTagInImg3Obj, verifySHSH)
+from img3lib.types import img3
+from img3lib.utils import isAligned
 
 
 def getPaths(path: str) -> list[Path]:
@@ -49,277 +55,290 @@ def writeJSON(path, data) -> None:
 
 
 class Img3Test:
-    def __init__(self, img3: Img3File, version: str) -> None:
+    def __init__(self, img3: img3, version: str) -> None:
         self.img3 = img3
         self.version = version
 
     def test_TYPE(self) -> bool | None:
-        try:
-            typeTag = self.img3.getTagWithMagic(b'TYPE')
-        except TagNotFound:
+        typeTag = getTagWithMagic(self.img3, BytesIO(b'TYPE'))
+
+        if not typeTag:
             return
-        else:
-            typeTag = typeTag[0]
 
-        if typeTag['totalLength'] != 32:
-            raise SizeError('totalLength is not of size 32!')
+        typeTag = typeTag[0]
 
-        if typeTag['dataLength'] != 4:
-            raise SizeError('dataLength is not of size 4!')
+        if typeTag.totalSize != 32:
+            raise ValueError('totalLength is not of size 32!')
 
-        if typeTag['data'][::-1] not in self.img3.valid_types:
-            raise BadMagic(f'Unknown value: {typeTag["data"]}')
+        if typeTag.dataSize != 4:
+            raise ValueError('dataLength is not of size 4!')
 
-        if typeTag['data'][::-1] != self.img3.ident:
-            raise BadMagic('TYPE does not match ident!')
+        if typeTag.data.getvalue()[::-1] not in TYPES:
+            raise ValueError(f'Unknown value: {typeTag.data.getvalue()[::-1]}')
 
-        if len(typeTag['pad']) != 16:
-            raise SizeError('Pad is not of size 16!')
+        if typeTag.data.getvalue()[::-1] != getImg3Ident(self.img3).getvalue():
+            raise ValueError('TYPE does not match ident!')
+
+        if getSizeOfIOStream(typeTag.padding) != 16:
+            raise ValueError('Pad is not of size 16!')
 
         return True
 
-    def test_DATA(self) -> bool | None:
-        try:
-            self.img3.getTagWithMagic(b'DATA')
-        except TagNotFound:
+    def test_DATA(self, iv: BytesIO | None, key: BytesIO | None) -> bool | None:
+        dataTag = getTagWithMagic(self.img3, BytesIO(b'DATA'))
+
+        if not dataTag:
             return
+
+        dataTag = dataTag[0]
+
+        kbagTag = getTagWithMagic(self.img3, BytesIO(b'KBAG'))
+
+        if not kbagTag:
+            return 
+
+        kbagTag = kbagTag[0]
 
         hasKASLR = True if int(self.version.split('.')[0]) >= 6 else False
         isKernel = True if self.img3.ident == b'krnl' else False
 
-        oldData = self.img3.extractDATA()
+        oldData = dataTag.data.getvalue() + dataTag.padding.getvalue()
         oldHash = hash(oldData)
 
-        decryptedData = self.img3.decrypt()
+        kbagObj = parseKBAG(kbagTag)
+
+        decryptedDataTag, paddingWasZeroed = img3Decrypt(dataTag, kbagObj.aesType, iv, key)
+        decryptedData = decryptedDataTag.data.getvalue() + decryptedDataTag.padding.getvalue()
         decryptedHash = hash(decryptedData)
 
-        if oldHash == decryptedHash and self.img3.image_encrypted:
+        if oldHash == decryptedHash:
             # Decryption made no impact.
-            raise BadDATA('Decryption made no impact. Assuming decryption did not work!')
+            raise ValueError('Decryption made no impact. Assuming decryption did not work!')
 
         if isKernel:
             # Decompress
-            decryptedData = self.img3.handleKernelData(decryptedData, hasKASLR)
+            decryptedDataTag = handleKernelData(decryptedDataTag, hasKASLR)
 
             # Compress
-            decryptedData = self.img3.handleKernelData(decryptedData, hasKASLR)
+            decryptedDataTag = handleKernelData(decryptedDataTag, hasKASLR)
 
-        encryptedData = self.img3.encrypt(decryptedData)
+        encryptedDataTag = img3Encrypt(decryptedDataTag, kbagObj.aesType, iv, key, paddingWasZeroed)
 
         # Required
-        self.img3.replaceDATA(encryptedData)
+        newImg3 = replaceTagInImg3Obj(self.img3, encryptedDataTag)
 
-        newData = self.img3.extractDATA()
+        newDataTag = getTagWithMagic(newImg3, BytesIO(b'DATA'))
+
+        if not newDataTag:
+            return
+
+        newDataTag = newDataTag[0]
+
+        newData = newDataTag.data.getvalue() + newDataTag.padding.getvalue()
         newHash = hash(newData)
 
         return oldHash == newHash
     
     def test_VERS(self) -> bool | None:
-        try:
-            versTag = self.img3.getTagWithMagic(b'VERS')
-        except TagNotFound:
+        versTag = getTagWithMagic(self.img3, BytesIO(b'VERS'))
+
+        if not versTag:
             return
-        else:
-            versTag = versTag[0]
 
-        data = versTag['data']
-
-        iBootStrSize = formatData('<I', getBufferAtIndex(data, 0, 4), False)[0]
-        getBufferAtIndex(data, 4, iBootStrSize)
+        versTag = versTag[0]
+        iBootStrSize = unpack('<I', getBufferAtIndex(versTag.data, 0, 4).getvalue())[0]
+        _ = getBufferAtIndex(versTag.data, 4, iBootStrSize)
 
         return True
 
     def test_SEPO(self) -> bool | None:
-        try:
-            sepoTag = self.img3.getTagWithMagic(b'SEPO')
-        except TagNotFound:
+        sepoTag = getTagWithMagic(self.img3, BytesIO(b'SEPO'))
+
+        if not sepoTag:
             return
-        else:
-            sepoTag = sepoTag[0]
 
-        if not isAligned(sepoTag['totalLength'], 4):
-            raise AlignmentError('totalLenth is not 4 byte aligned!')
+        sepoTag = sepoTag[0]
 
-        if sepoTag['dataLength'] != 4:
-            raise SizeError('dataLength is not of size 4!')
+        if not isAligned(sepoTag.totalSize, 4):
+            raise ValueError('totalLenth is not 4 byte aligned!')
 
-        if len(sepoTag['data']) != 4:
-            raise SizeError('data is not of size 4!')
+        if sepoTag.dataSize != 4:
+            raise ValueError('dataLength is not of size 4!')
 
-        if len(sepoTag['pad']) >= 1 and not isAligned(len(sepoTag['pad']), 4):
-            raise SizeError('pad is not of size 0 but is not 4 byte aligned!')
+        if getSizeOfIOStream(sepoTag.data) != 4:
+            raise ValueError('data is not of size 4!')
 
-        sepo = formatData('<I', sepoTag['data'], False)[0]
+        if getSizeOfIOStream(sepoTag.padding) >= 1 and not isAligned(getSizeOfIOStream(sepoTag.padding), 4):
+            raise ValueError('pad is not of size 0 but is not 4 byte aligned!')
 
-        if sepo not in self.img3.valid_sepos:
-            raise BadSEPOValue(f'Bad value: {sepo}')
+        sepo = unpack('<I', sepoTag.data.getvalue())[0]
+
+        if sepo not in SEPOS:
+            raise ValueError(f'Bad value: {sepo}')
 
         return True
-    
+
     def test_CHIP(self) -> bool | None:
-        try:
-            chipTag = self.img3.getTagWithMagic(b'CHIP')
-        except TagNotFound:
+        chipTag = getTagWithMagic(self.img3, BytesIO(b'CHIP'))
+
+        if not chipTag:
             return
-        else:
-            chipTag = chipTag[0]
 
-        chip = formatData('<I', chipTag['data'], False)[0]
+        chipTag = chipTag[0]
 
-        if chip not in self.img3.valid_chips:
-            raise BadCHIPValue(f'Bad value: {chip}')
+        chip = unpack('<I', chipTag.data.getvalue())[0]
+
+        if chip not in CHIPS:
+            raise ValueError(f'Bad value: {chip}')
 
         return True
 
     def test_BORD(self) -> bool | None:
-        try:
-            bordTag = self.img3.getTagWithMagic(b'BORD')
-        except TagNotFound:
+        bordTag = getTagWithMagic(self.img3, BytesIO(b'BORD'))
+
+        if not bordTag:
             return
-        else:
-            bordTag = bordTag[0]
 
-        board = formatData('<I', bordTag['data'], False)[0]
+        bordTag = bordTag[0]
 
-        if board not in self.img3.valid_boards:
-            raise BadBORDValue(f'Bad value: {board}')
+        board = unpack('<I', bordTag.data.getvalue())[0]
+
+        if board not in BORDS:
+            raise ValueError(f'Bad value: {board}')
 
         return True
 
     def test_KBAG(self) -> bool | None:
-        try:
-            kbags = self.img3.getTagWithMagic(b'KBAG')
-        except TagNotFound:
+        kbags = getTagWithMagic(self.img3, BytesIO(b'KBAG'))
+
+        if not kbags:
             return
 
-        for kbag in kbags:
-            self.img3.parseKBAGTag(kbag)
+        for kbagTag in kbags:
+            parseKBAG(kbagTag)
 
         return True
-    
+
     def test_SALT(self) -> bool | None:
-        try:
-            saltTag = self.img3.getTagWithMagic(b'SALT')
-        except TagNotFound:
+        saltTag = getTagWithMagic(self.img3, BytesIO(b'SALT'))
+
+        if not saltTag:
             return
-        else:
-            saltTag = saltTag[0]
+
+        saltTag = saltTag[0]
 
         pass
 
     def test_ECID(self) -> bool | None:
-        try:
-            ecidTag = self.img3.getTagWithMagic(b'ECID')
-        except TagNotFound:
+        ecidTag = getTagWithMagic(self.img3, BytesIO(b'ECID'))
+
+        if not ecidTag:
             return
-        else:
-            ecidTag = ecidTag[0]
+
+        ecidTag = ecidTag[0]
 
         pass
 
     def test_SHSH(self) -> bool | None:
-        try:
-            shshTag = self.img3.getTagWithMagic(b'SHSH')
-        except TagNotFound:
+        shshTag = getTagWithMagic(self.img3, BytesIO(b'SHSH'))
+
+        if not shshTag:
             return
-        else:
-            shshTag = shshTag[0]
 
-        if shshTag['totalLength'] != 140:
-            raise SizeError('totalLength is not of size 140!')
+        shshTag = shshTag[0]
 
-        if shshTag['dataLength'] != 128:
-            raise SizeError('dataLength is not of size 128!')
+        if shshTag.totalSize != 140:
+            raise ValueError('totalLength is not of size 140!')
 
-        if len(shshTag['data']) != 128:
-            raise SizeError('data is not of size 128!')
+        if shshTag.dataSize != 128:
+            raise ValueError('dataLength is not of size 128!')
 
-        if len(shshTag['pad']) >= 1:
-            raise SizeError('pad is not of size 0!')
+        if getSizeOfIOStream(shshTag.data) != 128:
+            raise ValueError('data is not of size 128!')
+
+        if getSizeOfIOStream(shshTag.padding) >= 1:
+            raise ValueError('pad is not of size 0!')
         
-        return self.img3.verifySHSH()
+        return verifySHSH(self.img3)
 
     def test_CERT(self) -> bool | None:
-        try:
-            tag = self.img3.getTagWithMagic(b'CERT')
-        except TagNotFound:
-            return
-        else:
-            tag = tag[0]
+        certTag = getTagWithMagic(self.img3, BytesIO(b'CERT'))
 
-        data = tag['data']
-        decodeDER(data)
+        if not certTag:
+            return
+
+        certTag = certTag[0]
+        _ = decodeDER(certTag.data.getvalue())
 
         return True
-    
+
     def test_CEPO(self) -> bool | None:
-        try:
-            cepoTag = self.img3.getTagWithMagic(b'CEPO')
-        except TagNotFound:
+        cepoTag = getTagWithMagic(self.img3, BytesIO(b'CEPO'))
+
+        if not cepoTag:
             return
-        else:
-            cepoTag = cepoTag[0]
+
+        cepoTag = cepoTag[0]
 
         pass
 
     def test_SDOM(self) -> bool | None:
-        try:
-            sdomTag = self.img3.getTagWithMagic(b'SDOM')
-        except TagNotFound:
+        sdomTag = getTagWithMagic(self.img3, BytesIO(b'SDOM'))
+
+        if not sdomTag:
             return
-        else:
-            sdomTag = sdomTag[0]
+
+        sdomTag = sdomTag[0]
 
         pass
 
     def test_PROD(self) -> bool | None:
-        try:
-            prodTag = self.img3.getTagWithMagic(b'PROD')
-        except TagNotFound:
+        prodTag = getTagWithMagic(self.img3, BytesIO(b'PROD'))
+
+        if not prodTag:
             return
-        else:
-            prodTag = prodTag[0]
+
+        prodTag = prodTag[0]
 
         pass
 
     def test_head(self) -> bool:
-        head = self.img3.head
-        ident = self.img3.ident
+        ident = getImg3Ident(self.img3).read(4)
 
-        if ident not in self.img3.valid_types:
+        if ident not in TYPES:
             raise TypeError(f'Bag ident: {ident}')
 
-        try:
-            typeTag = self.img3.getTagWithMagic(b'TYPE')[0]
-        except TagNotFound:
-            pass
-        else:
-            typeIdent = typeTag['data'][::-1]
+        typeTag = getTagWithMagic(self.img3, BytesIO(b'TYPE'))
+
+        # Some images like ramdisk don't have a TYPE tag!
+        if typeTag:
+            typeTag = typeTag[0]
+            typeIdent = typeTag.data.getvalue()[::-1]
 
             if typeIdent != ident:
-                raise BadMagic('TYPE does not match head identity!')
+                raise ValueError('TYPE does not match head identity!')
 
-        fullSize = self.img3.img3_head_size
+        fullSize = IMG3_HEAD_SIZE
         sigCheckArea = 0
 
-        tagsIgnore = (b'SHSH'[::-1], b'CERT'[::-1])
+        tagsIgnore = (b'SHSH', b'CERT')
 
         for tag in self.img3.tags:
-            if tag['magic'] not in tagsIgnore:
-                sigCheckArea += tag['totalLength']
+            if getTagMagic(tag).read(4) not in tagsIgnore:
+                sigCheckArea += tag.totalSize
 
-            fullSize += tag['totalLength']
+            fullSize += tag.totalSize
 
-        sizeNoPack = fullSize - self.img3.img3_head_size
+        sizeNoPack = fullSize - IMG3_HEAD_SIZE
 
-        if head['fullSize'] != fullSize:
-            raise SizeError('fullSize does not match!')
+        if getImg3FullSize(self.img3) != fullSize:
+            raise ValueError('fullSize does not match!')
 
-        if head['sizeNoPack'] != sizeNoPack:
-            raise SizeError('sizeNoPack does not match!')
+        if getImg3SizeNoPack(self.img3) != sizeNoPack:
+            raise ValueError('sizeNoPack does not match!')
 
-        if head['sigCheckArea'] != sigCheckArea:
-            raise SizeError('sigCheckArea does not match!')
+        if getImg3SigCheckArea(self.img3) != sigCheckArea:
+            raise ValueError('sigCheckArea does not match!')
 
         return True
 
@@ -365,29 +384,26 @@ def initImg3s(ipswPath: str):
 
     for version in info:
         files = info[version]['files']
-        keys = info[version]['keys']
-
-        info[version]['img3s'] = []
+        info[version]['img3s'] = {}
 
         for file in files:
             try:
-                img3 = Img3File(file.read_bytes())
-            except BadMagic:
+                img3Obj = readImg3(BytesIO(file.read_bytes()))
+            except ValueError:
                 continue
             except Exception:
                 raise
 
-            if keys:
-                for value in keys:
-                    if value.filename != file.name:
+            if info[version]['keys']:
+                for thing in info[version]['keys']:
+                    if thing.filename != file.name:
                         continue
 
-                    img3.iv = value.iv
-                    img3.key = value.key
-
-                    break
-
-            info[version]['img3s'].append(img3)
+                    info[version]['img3s'][file] = {
+                        'obj': img3Obj,
+                        'iv': BytesIO(thing.iv),
+                        'key': BytesIO(thing.key)
+                    }
 
     return info
 
@@ -400,20 +416,19 @@ def go(ipswPath: str, jsonPath: str) -> None:
         if version not in results:
             results[version] = {}
 
-        for img3 in stuff[version]['img3s']:
-            if not img3.iv and not img3.key:
-                # We're likely hitting extra img3 (img3 for other devices)
-                if stuff[version]['keys']:
-                    continue
+        for path in stuff[version]['img3s']:
+            img3Obj = stuff[version]['img3s'][path]['obj']
+            iv = stuff[version]['img3s'][path]['iv']
+            key = stuff[version]['img3s'][path]['key']
 
-            test = Img3Test(img3, version)
-            ident = img3.ident.decode()
+            test = Img3Test(img3Obj, version)
+            ident = getImg3Ident(img3Obj).read(4).decode()
 
             if ident not in results[version]:
                 results[version][ident] = {}
 
             results[version][ident]['TYPE'] = test.test_TYPE()
-            results[version][ident]['DATA'] = test.test_DATA()
+            results[version][ident]['DATA'] = test.test_DATA(iv, key)
             results[version][ident]['VERS'] = test.test_VERS()
             results[version][ident]['SEPO'] = test.test_SEPO()
             results[version][ident]['CHIP'] = test.test_CHIP()

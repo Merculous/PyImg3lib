@@ -648,13 +648,16 @@ def img3Encrypt(dataTag: img3tag, aes: int, iv: BytesIO | None, key: BytesIO | N
     block1Size = dataTag.dataSize & ~0xF
     block2Size = dataTag.dataSize & 0xF
     block1Data = getBufferAtIndex(dataTag.data, 0, block1Size)
-    block2Data = getBufferAtIndex(dataTag.data, block1Size, block2Size)
+    block2Data = getBufferAtIndex(dataTag.data, block1Size, block2Size) if block2Size >= 1 else BytesIO()
     encryptBuffer = block1Data
 
     if not paddingWasZeroed:
         encryptBuffer.seek(0, SEEK_END)
         encryptBuffer.write(block2Data.getvalue())
         encryptBuffer.write(dataTag.padding.getvalue())
+
+    # Ensure we pad the encrypt buffer
+    encryptBuffer = pad(16, encryptBuffer)
 
     if not isAligned(getSizeOfIOStream(encryptBuffer), 16):
         raise ValueError('Encrypt buffer is not 16 byte aligned!')
@@ -898,7 +901,7 @@ def verifySHSH(img3Obj: img3) -> bool | None:
         return
 
     certTag = certTag[0]
-    publicKey = extractPublicKeyFromDER(certTag.data)
+    publicKey = extractPublicKeyFromDER(certTag.data.getvalue())
     shshTagDataStart = getTagOffsetInImg3(img3Obj, BytesIO(b'SHSH'))
     img3Data = img3ToBytesIO(img3Obj)
     img3SHA1Data = getBufferAtIndex(img3Data, TAG_HEAD_SIZE, shshTagDataStart)

@@ -902,9 +902,8 @@ def verifySHSH(img3Obj: img3) -> bool | None:
 
     certTag = certTag[0]
     publicKey = extractPublicKeyFromDER(certTag.data.getvalue())
-    shshTagDataStart = getTagOffsetInImg3(img3Obj, BytesIO(b'SHSH'))
     img3Data = img3ToBytesIO(img3Obj)
-    img3SHA1Data = getBufferAtIndex(img3Data, TAG_HEAD_SIZE, shshTagDataStart)
+    img3SHA1Data = getBufferAtIndex(img3Data, 12, img3Obj.sigCheckArea + 8)
     return doRSACheck(publicKey, shshTag.data, img3SHA1Data)
 
 

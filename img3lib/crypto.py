@@ -76,17 +76,11 @@ def doRSACheck(rsaKey: RsaKey, rsaSignedData: BytesIO, sha1Data: BytesIO) -> boo
 
     try:
         scheme.verify(dataSHA1, rsaSignedData.getvalue())
-        valid = True
-    except (ValueError, TypeError):
+    except ValueError:
         pass
+    except Exception:
+        raise
+    else:
+        valid = True
 
     return valid
-
-def doSHA1(buffer: BytesIO) -> BytesIO:
-    if not isinstance(buffer, BytesIO):
-        raise TypeError
-
-    if getSizeOfIOStream(buffer) == 0:
-        raise ValueError('No data to read!')
-
-    return BytesIO(SHA1.new(buffer.getbuffer()).digest())

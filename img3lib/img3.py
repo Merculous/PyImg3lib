@@ -1,6 +1,7 @@
 
 from binascii import hexlify
 from io import SEEK_END, SEEK_SET, BytesIO
+from itertools import zip_longest
 from struct import pack, unpack
 
 from binpatch.io import getSizeOfIOStream
@@ -804,21 +805,33 @@ def findDifferencesBetweenTwoImg3s(img3Obj1: img3, img3Obj2: img3):
     if not img3Obj2.tags:
         raise ValueError('Img3 2 does not have any tags!')
 
-    for tag1, tag2 in zip(img3Obj1.tags, img3Obj2.tags):
-        if getTagMagic(tag1).read(4) != getTagMagic(tag2).read(4):
+    for tag1, tag2 in zip_longest(img3Obj1.tags, img3Obj2.tags):
+        if tag1 and tag2:
             print(f'Magic: {getTagMagic(tag1).read(4)}, {getTagMagic(tag2).read(4)}')
+    
+            if getTagTotalSize(tag1) != getTagTotalSize(tag2):
+                print(f'Total size: {getTagTotalSize(tag1)}, {getTagTotalSize(tag2)}')
 
-        if getTagTotalSize(tag1) != getTagTotalSize(tag2):
-            print(f'Total size: {getTagTotalSize(tag1)}, {getTagTotalSize(tag2)}')
+            if getTagDataSize(tag1) != getTagDataSize(tag2):
+                print(f'Data size: {getTagDataSize(tag1)}, {getTagDataSize(tag2)}')
 
-        if getTagDataSize(tag1) != getTagDataSize(tag2):
-            print(f'Data size: {getTagDataSize(tag1)}, {getTagDataSize(tag2)}')
+            tag1PadSize = getSizeOfIOStream(tag1.padding)
+            tag2PadSize = getSizeOfIOStream(tag2.padding)
 
-        tag1PadSize = getSizeOfIOStream(tag1.padding)
-        tag2PadSize = getSizeOfIOStream(tag2.padding)
+            if tag1PadSize != tag2PadSize:
+                print(f'Padding size: {tag1PadSize}, {tag2PadSize}')
 
-        if tag1PadSize != tag2PadSize:
-            print(f'Padding size: {tag1PadSize}, {tag2PadSize}')
+        if tag1 and tag2 is None:
+            print(f'Magic: {getTagMagic(tag1).read(4)}, {None}')
+            print(f'Total size: {getTagTotalSize(tag1)}, {None}')
+            print(f'Data size: {getTagDataSize(tag1)}', {None})
+            print(f'Padding size: {getTagPadSize(tag1)}, {None}')
+
+        if tag1 is None and tag2:
+            print(f'Magic: {None}, {getTagMagic(tag2).read(4)}')
+            print(f'Total size: {None}, {getTagTotalSize(tag2)}')
+            print(f'Data size: {None}, {getTagDataSize(tag2)}')
+            print(f'Padding size: {None}, {getTagPadSize(tag2)}')
 
 
 def printImg3Info(img3Obj: img3) -> None:

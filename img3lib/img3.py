@@ -824,7 +824,7 @@ def findDifferencesBetweenTwoImg3s(img3Obj1: img3, img3Obj2: img3):
         if tag1 and tag2 is None:
             print(f'Magic: {getTagMagic(tag1).read(4)}, {None}')
             print(f'Total size: {getTagTotalSize(tag1)}, {None}')
-            print(f'Data size: {getTagDataSize(tag1)}', {None})
+            print(f'Data size: {getTagDataSize(tag1)}, {None}')
             print(f'Padding size: {getTagPadSize(tag1)}, {None}')
 
         if tag1 is None and tag2:

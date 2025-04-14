@@ -791,7 +791,7 @@ def findDifferencesBetweenTwoImg3s(img3Obj1: img3, img3Obj2: img3):
         print(f'SigCheckArea: {getImg3SigCheckArea(img3Obj1)}, {getImg3SigCheckArea(img3Obj2)}')
 
     if getImg3Ident(img3Obj1).read(4) != getImg3Ident(img3Obj2).read(4):
-        print(f'Ident: {getImg3Ident(img3Obj1)}, {getImg3Ident(img3Obj2)}')
+        print(f'Ident: {getImg3Ident(img3Obj1).read(4)}, {getImg3Ident(img3Obj2).read(4)}')
 
     if not isinstance(img3Obj1.tags, list):
         raise TypeError

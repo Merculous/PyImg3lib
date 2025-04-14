@@ -777,8 +777,8 @@ def findDifferencesBetweenTwoImg3s(img3Obj1: img3, img3Obj2: img3):
     if not isinstance(img3Obj2, img3):
         raise TypeError
 
-    if getImg3Magic(img3Obj1) != getImg3Magic(img3Obj2):
-        print(f'Magic: {getImg3Magic(img3Obj1)}, {getImg3Magic(img3Obj2)}')
+    if getImg3Magic(img3Obj1).read(4) != getImg3Magic(img3Obj2).read(4):
+        print(f'Magic: {getImg3Magic(img3Obj1).read(4)}, {getImg3Magic(img3Obj2).read(4)}')
 
     if getImg3FullSize(img3Obj1) != getImg3FullSize(img3Obj2):
         print(f'Fullsize: {getImg3FullSize(img3Obj1)}, {getImg3FullSize(img3Obj2)}')
@@ -789,7 +789,7 @@ def findDifferencesBetweenTwoImg3s(img3Obj1: img3, img3Obj2: img3):
     if getImg3SigCheckArea(img3Obj1) != getImg3SigCheckArea(img3Obj2):
         print(f'SigCheckArea: {getImg3SigCheckArea(img3Obj1)}, {getImg3SigCheckArea(img3Obj2)}')
 
-    if getImg3Ident(img3Obj1) != getImg3Ident(img3Obj2):
+    if getImg3Ident(img3Obj1).read(4) != getImg3Ident(img3Obj2).read(4):
         print(f'Ident: {getImg3Ident(img3Obj1)}, {getImg3Ident(img3Obj2)}')
 
     if not isinstance(img3Obj1.tags, list):
@@ -805,8 +805,8 @@ def findDifferencesBetweenTwoImg3s(img3Obj1: img3, img3Obj2: img3):
         raise ValueError('Img3 2 does not have any tags!')
 
     for tag1, tag2 in zip(img3Obj1.tags, img3Obj2.tags):
-        if getTagMagic(tag1) != getTagMagic(tag2):
-            print(f'Magic: {getTagMagic(tag1)}, {getTagMagic(tag2)}')
+        if getTagMagic(tag1).read(4) != getTagMagic(tag2).read(4):
+            print(f'Magic: {getTagMagic(tag1).read(4)}, {getTagMagic(tag2).read(4)}')
 
         if getTagTotalSize(tag1) != getTagTotalSize(tag2):
             print(f'Total size: {getTagTotalSize(tag1)}, {getTagTotalSize(tag2)}')

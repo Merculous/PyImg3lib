@@ -54,6 +54,7 @@ def doAES(encrypt: bool, aesType: int, data: BytesIO, iv: BytesIO, key: BytesIO)
 
     return buffer
 
+
 def doRSACheck(rsaKey: RsaKey, rsaSignedData: BytesIO, sha1Data: BytesIO) -> bool:
     if not isinstance(rsaKey, RsaKey):
         raise TypeError

@@ -9,7 +9,8 @@ from .img3 import (dataTagPaddingIsZeroed, findDifferencesBetweenTwoImg3s,
                    getNestedImg3FromCERT, getTagWithMagic, handleKernelData,
                    img3Decrypt, img3Encrypt, img3ToBytesIO, make24KPWNLLB,
                    makeTag, parseKBAG, printImg3Info, printKBAG, readImg3,
-                   replaceTagInImg3Obj, verifySHSH)
+                   replaceTagInImg3Obj, signImg3, verifySHSH)
+from .utils import readPlist
 
 
 def main():
@@ -20,7 +21,8 @@ def main():
  
     parser.add_argument('--data', help='data for DATA tag', metavar='', type=Path)
     parser.add_argument('--diff', help='diff two img3 files', metavar='img3', type=Path)
-    # parser.add_argument('--blob', help='sign and personalize an img3', metavar='', type=Path)
+    parser.add_argument('--blob', help='sign and personalize an img3', metavar='', type=Path)
+    parser.add_argument('--manifest', help='BuildManifest.plist (used when signing)', metavar='', type=Path)
 
     parser.add_argument('-a', action='store_true', help='print all img3 info')
     parser.add_argument('-d', action='store_true', help='decrypt')
@@ -166,6 +168,13 @@ def main():
     if args.kpwn and args.o:
         kpwnImg3 = make24KPWNLLB(img3Obj, args.n72, args.n88)
         return writeBytesToPath(args.o, img3ToBytesIO(kpwnImg3))
+
+    if args.blob and args.manifest and args.o:
+        blobData = readPlist(args.blob)
+        manifestData = readPlist(args.manifest)
+        signedImg3 = signImg3(img3Obj, blobData, manifestData)
+        img3Data = img3ToBytesIO(signedImg3)
+        return writeBytesToPath(args.o, img3Data)
 
 
 if __name__ == '__main__':

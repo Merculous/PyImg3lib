@@ -1,5 +1,8 @@
 
 from io import SEEK_END, SEEK_SET, BytesIO
+from pathlib import Path
+from plistlib import loads
+from typing import Any
 
 from binpatch.io import getSizeOfIOStream
 
@@ -49,3 +52,13 @@ def pad(padSize: int, data: BytesIO) -> BytesIO:
     data.seek(0, SEEK_SET)
 
     return data
+
+
+def readPlist(path: Path) -> Any:
+    if not isinstance(path, Path):
+        raise TypeError
+
+    if not path.is_file():
+        raise ValueError(f'{path} is not a file!')
+
+    return loads(path.read_bytes())

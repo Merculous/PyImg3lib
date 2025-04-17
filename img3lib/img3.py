@@ -6,9 +6,11 @@ from struct import pack, unpack
 
 from binpatch.io import getSizeOfIOStream
 from binpatch.utils import getBufferAtIndex, replaceBufferAtIndex
+from Crypto.Hash import SHA1
 
 from .crypto import AES_SIZES, doAES, doRSACheck
-from .der import extractNestedImages, extractPublicKeyFromDER
+from .der import (decodeDER, extractNestedImages, extractPublicKeyFromDER,
+                  extractSHA1HashesFromAPTicket)
 from .kpwn import (KPWN_BOOTSTRAP_OFFSET, KPWN_SHELLCODE_OFFSET,
                    N72_24KPWN_SIZE, N72_BOOTSTRAP, N72_SHELLCODE,
                    N72_SHELLCODE_ADDRESS, N72_SHELLCODE_DWORD_INDEX,
@@ -979,7 +981,7 @@ def removeTagFromImg3(img3Obj: img3, magic: BytesIO, removeAll: bool = False) ->
         tags.append(tag)
 
     img3Obj.tags = tags
-    return img3Obj
+    return updateImg3Head(img3Obj)
 
 
 def make24KPWNLLB(img3Obj: img3, isN72: bool, isN88: bool) -> img3:
@@ -1066,5 +1068,107 @@ def make24KPWNLLB(img3Obj: img3, isN72: bool, isN88: bool) -> img3:
 
     if img3Obj.fullSize != kpwnSize:
         raise ValueError(f'LLB is not of size: {kpwnSize}!')
+
+    return newImg3
+
+
+def insertTagInImg3(img3Obj: img3, tag: img3tag) -> img3:
+    if not isinstance(img3Obj, img3):
+        raise TypeError
+
+    if not isinstance(img3Obj.tags, list):
+        raise TypeError
+
+    if not img3Obj.tags:
+        raise ValueError('No tags are present!')
+
+    if not isinstance(tag, img3tag):
+        raise TypeError
+
+    img3Obj.tags.append(tag)
+    return updateImg3Head(img3Obj)
+
+
+
+def signImg3(img3Obj: img3, blobData: dict, manifestData: dict) -> img3:
+    if not isinstance(img3Obj, img3):
+        raise TypeError
+
+    if not isinstance(img3Obj.tags, list):
+        raise TypeError
+
+    if not img3Obj.tags:
+        raise ValueError('No tags are present!')
+
+    if not isinstance(blobData, dict):
+        raise TypeError
+
+    if not blobData:
+        raise ValueError('Blob data is empty!')
+
+    if not isinstance(manifestData, dict):
+        raise TypeError
+
+    if not manifestData:
+        raise ValueError('Manifest data is empty!')
+
+    manifest = manifestData['BuildIdentities'][0]['Manifest']
+    img3SHA1 = None
+    imageName = None
+
+    for name in manifest:
+        sha1Digest = manifest[name]['Digest']
+        sha1Buffer = getBufferAtIndex(img3ToBytesIO(img3Obj), 12, img3Obj.sigCheckArea + 8)
+        bufferSHA1 = SHA1.new(sha1Buffer.getbuffer())
+
+        if sha1Digest != bufferSHA1.digest():
+            continue
+
+        img3SHA1 = bufferSHA1.hexdigest()
+        imageName = name
+        break
+
+    if img3SHA1 is None:
+        raise ValueError('Unable to find digest!')
+    
+    if imageName is None:
+        raise ValueError('Image name is empty!')
+
+    decoded = decodeDER(blobData['APTicket'])
+    sha1Hashes = extractSHA1HashesFromAPTicket(decoded)
+
+    sha1FoundInApTicket = False
+
+    for sha1Hash in sha1Hashes:
+        if img3SHA1 != sha1Hash:
+            continue
+
+        sha1FoundInApTicket = True
+        break
+
+    if not sha1FoundInApTicket:
+        raise ValueError('Could not find SHA1 in ApTicket!')
+
+    imageBlob = BytesIO(blobData[imageName]['Blob'])
+    blobDataSize = getSizeOfIOStream(imageBlob)
+
+    newImg3 = removeTagFromImg3(img3Obj, BytesIO(b'ECID'), True)
+    newImg3 = removeTagFromImg3(img3Obj, BytesIO(b'SHSH'), True)
+    newImg3 = removeTagFromImg3(img3Obj, BytesIO(b'CERT'), True)
+
+    i = 0
+    tags = []
+
+    while i in range(blobDataSize):
+        buffer = getBufferAtIndex(imageBlob, i, blobDataSize - i)
+        tag = readTag(buffer)
+        tags.append(tag)
+        i += tag.totalSize
+
+    if i != blobDataSize:
+        raise ValueError('Error occurred during tag reading!')
+
+    for tag in tags:
+        newImg3 = insertTagInImg3(newImg3, tag)
 
     return newImg3

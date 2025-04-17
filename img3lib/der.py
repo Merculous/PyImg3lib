@@ -161,3 +161,20 @@ def extractNestedImages(data):
         strings.append(x['value'])
 
     return b''.fromhex(strings[-1])[2:]
+
+
+def extractSHA1HashesFromAPTicket(data):
+    hashes = []
+
+    for x in searchDER(data, asn1.Classes.Context, None):
+        if not isinstance(x['value'], str):
+            continue
+
+        sha1Hash = x['value']
+
+        if len(sha1Hash) != 40:
+            continue
+
+        hashes.append(sha1Hash)
+
+    return hashes

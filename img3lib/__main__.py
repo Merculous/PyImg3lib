@@ -182,7 +182,7 @@ def main():
         certTag = getTagWithMagic(img3Obj, BytesIO(b'CERT'))
 
         if not certTag:
-            return print('CERT does not contain a nested Img3!')
+            return print('This image does not contain a CERT tag!')
 
         certTag = certTag[0]
         nestedImg3 = getNestedImageInCERT(certTag)

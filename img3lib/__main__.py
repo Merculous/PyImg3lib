@@ -6,10 +6,11 @@ from pathlib import Path
 from binpatch.io import readBytesFromPath, writeBytesToPath
 
 from .img3 import (dataTagPaddingIsZeroed, findDifferencesBetweenTwoImg3s,
-                   getNestedImg3FromCERT, getTagWithMagic, handleKernelData,
-                   img3Decrypt, img3Encrypt, img3ToBytesIO, make24KPWNLLB,
-                   makeTag, parseKBAG, printImg3Info, printKBAG, readImg3,
-                   replaceTagInImg3Obj, signImg3, verifySHSH)
+                   getNestedImageInCERT, getNestedImg3FromCERT,
+                   getTagWithMagic, handleKernelData, img3Decrypt, img3Encrypt,
+                   img3ToBytesIO, make24KPWNLLB, makeTag, parseKBAG,
+                   printImg3Info, printKBAG, readImg3, replaceTagInImg3Obj,
+                   signImg3, verifySHSH)
 from .utils import readPlist
 
 
@@ -36,6 +37,7 @@ def main():
     parser.add_argument('--lzss', action='store_true', help='(de)compress kernel DATA')
     parser.add_argument('--kaslr', action='store_true', help='kernel supports kASLR (iOS 6+)')
     parser.add_argument('--kbag', action='store_true', help='decrypt KBAG(s)')
+    parser.add_argument('--nested', action='store_true', help='print nested Img3 in CERT')
 
     parser.add_argument('-iv', metavar='iv', type=str)
     parser.add_argument('-k', metavar='key', type=str)
@@ -175,6 +177,22 @@ def main():
         signedImg3 = signImg3(img3Obj, blobData, manifestData)
         img3Data = img3ToBytesIO(signedImg3)
         return writeBytesToPath(args.o, img3Data)
+
+    if args.cert and args.nested:
+        certTag = getTagWithMagic(img3Obj, BytesIO(b'CERT'))
+
+        if not certTag:
+            return print('CERT does not contain a nested Img3!')
+
+        certTag = certTag[0]
+        nestedImg3 = getNestedImageInCERT(certTag)
+        
+        if nestedImg3:
+            printImg3Info(nestedImg3)
+        else:
+            print('CERT does not have a nested Img3!')
+
+        return
 
 
 if __name__ == '__main__':

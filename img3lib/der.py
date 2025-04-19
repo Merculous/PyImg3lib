@@ -154,10 +154,9 @@ def extractPublicKeyFromDER(data):
 
 
 def extractNestedImages(data):
-    decoded = decodeDER(data)
     strings = []
 
-    for x in searchDER(decoded, asn1.Classes.Universal, asn1.Numbers.OctetString):
+    for x in searchDER(data, asn1.Classes.Universal, asn1.Numbers.OctetString):
         strings.append(x['value'])
 
     return b''.fromhex(strings[-1])[2:]

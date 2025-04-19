@@ -1172,3 +1172,27 @@ def signImg3(img3Obj: img3, blobData: dict, manifestData: dict) -> img3:
         newImg3 = insertTagInImg3(newImg3, tag)
 
     return newImg3
+
+
+def getNestedImageInCERT(tag: img3tag) -> img3 | None:
+    if not isinstance(tag, img3tag):
+        raise TypeError
+
+    magic = getTagMagic(tag).read(4)
+
+    if magic != b'CERT':
+        raise ValueError(f'Incorrect tag magic! Got {magic}!')
+    
+    if getSizeOfIOStream(tag.data) == 0:
+        raise ValueError('CERT data is empty!')
+
+    derData = decodeDER(tag.data.getvalue())
+    nestedData = BytesIO(extractNestedImages(derData))
+    nestedImage = None
+
+    try:
+        nestedImage = readImg3(nestedData)
+    except ValueError:
+        return
+    else:
+        return nestedImage

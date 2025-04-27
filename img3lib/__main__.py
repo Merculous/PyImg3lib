@@ -36,7 +36,7 @@ def main():
     parser.add_argument('--n88', action='store_true', help='N88/3GS use with --kpwn')
     parser.add_argument('--lzss', action='store_true', help='(de)compress kernel DATA')
     parser.add_argument('--kaslr', action='store_true', help='kernel supports kASLR (iOS 6+)')
-    parser.add_argument('--kbag', action='store_true', help='decrypt KBAG(s)')
+    parser.add_argument('--kbag', action='store_true', help='print KBAG(s)')
     parser.add_argument('--nested', action='store_true', help='print nested Img3 in CERT')
 
     parser.add_argument('-iv', metavar='iv', type=str)
@@ -104,21 +104,7 @@ def main():
         secondImg3 = readImg3(secondImg3Data)
         return findDifferencesBetweenTwoImg3s(img3Obj, secondImg3)
 
-    if args.a and args.cert:
-        certTag = getTagWithMagic(img3Obj, BytesIO(b'CERT'))
-
-        if not certTag:
-            return print('This image does not contain a CERT tag!')
-
-        certTag = certTag[0]
-        nestedImg3 = getNestedImg3FromCERT(certTag)
-
-        if not nestedImg3:
-            return print('CERT does not have a nested img3!')
-
-        return printImg3Info(nestedImg3)
-
-    if args.a:
+    if args.a and not args.cert:
         return printImg3Info(img3Obj)
 
     if args.o and args.cert:

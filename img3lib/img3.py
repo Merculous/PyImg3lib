@@ -1117,7 +1117,11 @@ def signImg3(img3Obj: img3, blobData: dict, manifestData: dict) -> img3:
     imageName = None
 
     for name in manifest:
-        sha1Digest = manifest[name]['Digest']
+        sha1Digest = manifest[name].get('Digest')
+
+        if sha1Digest is None:
+            continue
+
         sha1Buffer = getBufferAtIndex(img3ToBytesIO(img3Obj), 12, img3Obj.sigCheckArea + 8)
         bufferSHA1 = SHA1.new(sha1Buffer.getbuffer())
 
@@ -1149,8 +1153,13 @@ def signImg3(img3Obj: img3, blobData: dict, manifestData: dict) -> img3:
     if not sha1FoundInApTicket:
         raise ValueError('Could not find SHA1 in ApTicket!')
 
-    imageBlob = BytesIO(blobData[imageName]['Blob'])
-    blobDataSize = getSizeOfIOStream(imageBlob)
+    imageBlob = blobData.get(imageName)
+
+    if imageBlob is None:
+        raise ValueError(f'{imageName} is missing in blob data!')
+
+    imageBlobData = BytesIO(imageBlob['Blob'])
+    blobDataSize = getSizeOfIOStream(imageBlobData)
 
     newImg3 = removeTagFromImg3(img3Obj, BytesIO(b'ECID'), True)
     newImg3 = removeTagFromImg3(img3Obj, BytesIO(b'SHSH'), True)
@@ -1160,7 +1169,7 @@ def signImg3(img3Obj: img3, blobData: dict, manifestData: dict) -> img3:
     tags = []
 
     while i in range(blobDataSize):
-        buffer = getBufferAtIndex(imageBlob, i, blobDataSize - i)
+        buffer = getBufferAtIndex(imageBlobData, i, blobDataSize - i)
         tag = readTag(buffer)
         tags.append(tag)
         i += tag.totalSize

@@ -1,24 +1,23 @@
 
 from dataclasses import dataclass
-from io import BytesIO
 
 
 @dataclass
 class img3tag:
-    magic: BytesIO
+    magic: bytes
     totalSize: int
     dataSize: int
-    data: BytesIO
-    padding: BytesIO
+    data: bytes
+    padding: bytes
 
 
 @dataclass
 class img3:
-    magic: BytesIO
+    magic: bytes
     fullSize: int
     sizeNoPack: int
     sigCheckArea: int
-    ident: BytesIO
+    ident: bytes
     tags: list[img3tag]
 
 
@@ -26,16 +25,16 @@ class img3:
 class kbag:
     cryptState: int
     aesType: int
-    iv: BytesIO
-    key: BytesIO
+    iv: bytes
+    key: bytes
 
 
 # https://github.com/apple-oss-distributions/kext_tools/blob/main/kernelcache.h
 # prelinkVersion value >= 1 means KASLR supported (iOS 6+)
 @dataclass
 class PrelinkedKernelHeader:
-    signature: BytesIO
-    compressType: BytesIO
+    signature: bytes
+    compressType: bytes
     adler32: int
     uncompressedSize: int
     compressedSize: int

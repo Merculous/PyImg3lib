@@ -216,18 +216,14 @@ resolved_reference = "187f899545cf46c75adbc6239207ab253d334eff"
 
 [[package]]
 name = "pybinpatch"
-version = "1.0.8"
+version = "1.1.1"
 description = "Binary diff and patch lib"
 optional = false
-python-versions = "^3.11"
-files = []
-develop = false
-
-[package.source]
-type = "git"
-url = "https://github.com/Merculous/PyBinPatch.git"
-reference = "update"
-resolved_reference = "43bed957e7ba07b7b77369a2b23a3fc7f0003610"
+python-versions = "<4.0,>=3.11"
+files = [
+    {file = "pybinpatch-1.1.1-py3-none-any.whl", hash = "sha256:f4de3a3dd0dbc1afa0eac7810ac9e2d3ac92961e5ac0c2a0c1db7a5ffcec3368"},
+    {file = "pybinpatch-1.1.1.tar.gz", hash = "sha256:f2988fc8c0f97c991f399e016ec365103aa5408449252f9528ad19e59386a62f"},
+]
 
 [[package]]
 name = "pycryptodome"
@@ -400,4 +396,4 @@ dev = ["black (>=19.3b0)", "pytest (>=4.6.2)"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "3c706945453a1a6e42dc56238f8b55969c37ffdcfea86f4c3bc44168426ee36f"
+content-hash = "ffcc032af78feb2a2eafe2ed09d13865859582cb085553e47b3cb6995c30341e"

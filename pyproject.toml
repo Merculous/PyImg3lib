@@ -12,7 +12,7 @@ python = "^3.11"
 pylzss = "^0.3.4"
 pycryptodome = "^3.19.0"
 asn1 = "^2.7.0"
-pybinpatch = {git = "https://github.com/Merculous/PyBinPatch.git", rev = "update"}
+pybinpatch = "^1.1.1"
 
 [tool.poetry.group.dev.dependencies]
 lykos = {git = "https://github.com/m1stadev/lykos.git"}

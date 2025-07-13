@@ -1,10 +1,8 @@
 
-from io import SEEK_END, SEEK_SET, BytesIO
 from struct import pack, unpack
 from zlib import adler32
 
 import lzss
-from binpatch.io import getSizeOfIOStream
 from binpatch.utils import getBufferAtIndex
 
 from .types import PrelinkedKernelHeader
@@ -12,35 +10,29 @@ from .types import PrelinkedKernelHeader
 LZSS_HEAD_SIZE = 0x180
 LZSS_STRUCT_SIZE = 0x18
 LZSS_PADDING_SIZE = LZSS_HEAD_SIZE - LZSS_STRUCT_SIZE
-LZSS_SIGNATURE = BytesIO(b'comp')
-LZSS_COMPRESSTYPE = BytesIO(b'lzss')
+LZSS_SIGNATURE = b'comp'
+LZSS_COMPRESSTYPE = b'lzss'
 
 
 def initPrelinkedKernelHeader() -> PrelinkedKernelHeader:
-    return PrelinkedKernelHeader(BytesIO(), BytesIO(), 0, 0, 0, 0)
+    return PrelinkedKernelHeader(b'', b'', 0, 0, 0, 0)
 
 
-def parsePrelinkedKernelHeader(data: BytesIO) -> PrelinkedKernelHeader:
-    if not isinstance(data, BytesIO):
-        raise TypeError
+def parsePrelinkedKernelHeader(data: bytes) -> PrelinkedKernelHeader:
+    if not isinstance(data, bytes):
+        raise TypeError(f'Data must be of type: {bytes}')
 
-    dataSize = getSizeOfIOStream(data)
+    dataSize = len(data)
 
     if dataSize < LZSS_STRUCT_SIZE:
         raise ValueError(f'Data buffer must be of size: {LZSS_STRUCT_SIZE}!')
 
     headerData = getBufferAtIndex(data, 0, LZSS_STRUCT_SIZE)
-    signature, compressType, adler32, uncompressedSize, compressedSize, prelinkVersion = unpack('>4s4s4I', headerData.getvalue())
+    signature, compressType, adler32, uncompressedSize, compressedSize, prelinkVersion = unpack('>4s4s4I', headerData)
 
     header = initPrelinkedKernelHeader()
-    header.signature.seek(0, SEEK_SET)
-    header.signature.write(signature)
-    header.signature.seek(0, SEEK_SET)
-
-    header.compressType.seek(0, SEEK_SET)
-    header.compressType.write(compressType)
-    header.compressType.seek(0, SEEK_SET)
-
+    header.signature = signature
+    header.compressType = compressType
     header.adler32 = adler32
     header.uncompressedSize = uncompressedSize
     header.compressedSize = compressedSize
@@ -49,78 +41,73 @@ def parsePrelinkedKernelHeader(data: BytesIO) -> PrelinkedKernelHeader:
     return header
 
 
-def createLZSSHeaderPadding() -> BytesIO:
-    return BytesIO(b'\x00' * LZSS_PADDING_SIZE)
+def createLZSSHeaderPadding() -> bytes:
+    return b'\x00' * LZSS_PADDING_SIZE
 
 
-def compress(data: BytesIO, kASLRSupported: bool) -> BytesIO:
-    if not isinstance(data, BytesIO):
-        raise TypeError
+def compress(data: bytes, kASLRSupported: bool) -> bytes:
+    if not isinstance(data, bytes):
+        raise TypeError(f'Data must be of type: {bytes}')
 
     if not isinstance(kASLRSupported, bool):
-        raise TypeError
+        raise TypeError(f'kASLRSupported must be of type: {bool}')
 
-    dataSize = getSizeOfIOStream(data)
+    dataSize = len(data)
 
-    if dataSize == 0:
+    if not data:
         raise ValueError('No data to read!')
 
-    uncompressedData = data.getvalue()
-    compressedData = BytesIO(lzss.compress(uncompressedData))
+    uncompressedData = data
+    compressedData = lzss.compress(uncompressedData)
 
     header = (
-        LZSS_SIGNATURE.getvalue(), # Ignore type warnings here
-        LZSS_COMPRESSTYPE.getvalue(),
+        LZSS_SIGNATURE,
+        LZSS_COMPRESSTYPE,
         adler32(uncompressedData),
         dataSize,
-        getSizeOfIOStream(compressedData),
+        len(compressedData),
         1 if kASLRSupported else 0
     )
 
-    headerPacked = BytesIO(pack('>4s4s4I', *header))
-    headerPacked.seek(0, SEEK_END)
-    headerPacked.write(createLZSSHeaderPadding().getvalue())
-    headerPacked.write(compressedData.getvalue())
-    headerPacked.seek(0, SEEK_SET)
-
+    headerPacked = pack('>4s4s4I', *header) + createLZSSHeaderPadding() + compressedData
     return headerPacked
 
 
-def decompress(data: BytesIO) -> BytesIO:
-    if not isinstance(data, BytesIO):
-        raise TypeError
+def decompress(data: bytes) -> bytes:
+    if not isinstance(data, bytes):
+        raise TypeError(f'Data must be of type: {bytes}')
     
-    if getSizeOfIOStream(data) == 0:
+    if not data:
         raise ValueError('No data to read!')
 
     headerData = getBufferAtIndex(data, 0, LZSS_STRUCT_SIZE)
     header = parsePrelinkedKernelHeader(headerData)
 
-    if not isinstance(header.signature, BytesIO):
-        raise TypeError
+    if not isinstance(header.signature, bytes):
+        raise TypeError(f'Signature must be of type: {bytes}')
 
-    if not isinstance(header.compressType, BytesIO):
-        raise TypeError
+    if not isinstance(header.compressType, bytes):
+        raise TypeError(f'CompressType must be of type: {bytes}')
 
     if not isinstance(header.adler32, int):
-        raise TypeError
+        raise TypeError(f'Adler32 must be of type: {int}')
 
     if not isinstance(header.uncompressedSize, int):
-        raise TypeError
+        raise TypeError(f'uncompressedSize must be of type {int}')
 
     if not isinstance(header.compressedSize, int):
-        raise TypeError
+        raise TypeError(f'compressedSize must be of type: {int}')
 
     if not isinstance(header.prelinkVersion, int):
-        raise TypeError
+        raise TypeError(f'prelinkVersion must be of type: {int}')
 
-    if header.signature.getvalue() != LZSS_SIGNATURE.getvalue():
-        raise ValueError(f'Unknown signature. Expected {LZSS_SIGNATURE.getvalue()}, got {header.signature.getvalue()}!')
+    if header.signature != LZSS_SIGNATURE:
+        raise ValueError(f'Unknown signature. Expected {LZSS_SIGNATURE}, got {header.signature}!')
 
-    if header.compressType.getvalue() != LZSS_COMPRESSTYPE.getvalue():
-        raise ValueError(f'Unknown compress type. Expected {LZSS_COMPRESSTYPE.getvalue()}, got {header.compressType.getvalue()}!')
+    if header.compressType != LZSS_COMPRESSTYPE:
+        raise ValueError(f'Unknown compress type. Expected {LZSS_COMPRESSTYPE}, got {header.compressType}!')
 
-    realData = getBufferAtIndex(data, LZSS_HEAD_SIZE, header.compressedSize).getvalue()
+    realData = getBufferAtIndex(data, LZSS_HEAD_SIZE, header.compressedSize)
     realDataSize = len(realData)
 
     if realDataSize != header.compressedSize:
@@ -140,4 +127,4 @@ def decompress(data: BytesIO) -> BytesIO:
     if header.prelinkVersion not in (0, 1):
         raise ValueError(f'Unknown prelinkVersion! Expected 0 or 1, got {header.prelinkVersion}!')
 
-    return BytesIO(uncompressedData)
+    return uncompressedData

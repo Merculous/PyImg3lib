@@ -6,7 +6,7 @@ from binpatch.io import readBytesFromPath, writeBytesToPath
 
 from .img3 import (dataTagPaddingIsZeroed, findDifferencesBetweenTwoImg3s,
                    getNestedImageInCERT, getTagWithMagic, handleKernelData,
-                   img3Decrypt, img3Encrypt, img3ToBytesIO, make24KPWNLLB,
+                   img3Decrypt, img3Encrypt, img3ToBytes, img3ToBytes, make24KPWNLLB,
                    makeTag, parseKBAG, printImg3Info, printKBAG, readImg3,
                    replaceTagInImg3Obj, signImg3, verifySHSH)
 from .utils import readPlist
@@ -94,7 +94,7 @@ def main():
             newDataTag = img3Encrypt(newDataTag, kbagObj.aesType, b''.fromhex(args.iv), b''.fromhex(args.k), origDataPaddingZeroed)
 
         newImg3 = replaceTagInImg3Obj(img3Obj, newDataTag)
-        img3Data = img3ToBytesIO(newImg3)
+        img3Data = img3ToBytes(newImg3)
         return writeBytesToPath(args.o, img3Data)
 
     if args.diff:
@@ -153,13 +153,13 @@ def main():
 
     if args.kpwn and args.o:
         kpwnImg3 = make24KPWNLLB(img3Obj, args.n72, args.n88)
-        return writeBytesToPath(args.o, img3ToBytesIO(kpwnImg3))
+        return writeBytesToPath(args.o, img3ToBytes(kpwnImg3))
 
     if args.blob and args.manifest and args.o:
         blobData = readPlist(args.blob)
         manifestData = readPlist(args.manifest)
         signedImg3 = signImg3(img3Obj, blobData, manifestData)
-        img3Data = img3ToBytesIO(signedImg3)
+        img3Data = img3ToBytes(signedImg3)
         return writeBytesToPath(args.o, img3Data)
 
     if args.cert and args.nested:

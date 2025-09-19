@@ -474,7 +474,7 @@ def printKBAG(kbagTag: img3tag) -> None:
     print(f'Key: {hexlify(kbagObj.key).decode()}')
 
 
-def makeTag(magic: bytes, data: bytes) -> img3tag:
+def makeTag(magic: bytes, data: bytes | None) -> img3tag:
     if not isinstance(magic, bytes):
         raise TypeError(f'Magic must be of type: {bytes}')
 
@@ -487,10 +487,8 @@ def makeTag(magic: bytes, data: bytes) -> img3tag:
     if not data:
         raise ValueError('No data to read!')
 
-    tagMagic = magic
-
-    if tagMagic not in TAGS:
-        raise ValueError(f'Unknown tag magic: {tagMagic.decode()}')
+    if magic not in TAGS:
+        raise ValueError(f'Unknown tag magic: {magic.decode()}')
 
     dataSize = len(data)
 
@@ -543,7 +541,7 @@ def img3Decrypt(dataTag: img3tag, aes: int, iv: bytes | None, key: bytes | None)
     paddingIsZeroed = dataTagPaddingIsZeroed(dataTag)
 
     if not paddingIsZeroed:
-        decryptBuffer = block2Data + dataTag.padding
+        decryptBuffer += block2Data + dataTag.padding
 
     if not isAligned(len(decryptBuffer), 16):
         raise ValueError('Decrypt buffer is not 16 byte aligned!')
@@ -552,7 +550,7 @@ def img3Decrypt(dataTag: img3tag, aes: int, iv: bytes | None, key: bytes | None)
         decryptBuffer = doAES(False, aes, decryptBuffer, iv, key)
 
     if paddingIsZeroed:
-        decryptBuffer = block2Data
+        decryptBuffer += block2Data
     else:
         decryptBuffer = getBufferAtIndex(decryptBuffer, 0, dataTag.dataSize)
 
@@ -636,7 +634,7 @@ def img3Encrypt(dataTag: img3tag, aes: int, iv: bytes | None, key: bytes | None,
     encryptBufferSize = len(encryptBuffer)
 
     if paddingWasZeroed:
-        encryptBuffer = block2Data
+        encryptBuffer += block2Data
     else:
         paddingSize = len(dataTag.padding)
 
@@ -646,7 +644,7 @@ def img3Encrypt(dataTag: img3tag, aes: int, iv: bytes | None, key: bytes | None,
 
     newDataTag = makeTag(b'DATA', encryptBuffer)
 
-    if len(padding) >= 1:
+    if padding:
         if len(newDataTag.padding) != len(padding):
             raise ValueError(f'Expected padding size {len(newDataTag.padding)}, got {len(padding)}!')
 
@@ -697,7 +695,7 @@ def replaceTagInImg3Obj(img3Obj: img3, newTag: img3tag) -> img3:
     return updateImg3Head(img3Obj)
 
 
-def img3ToBytesIO(img3Obj: img3) -> bytes:
+def img3ToBytes(img3Obj: img3) -> bytes:
     if not isinstance(img3Obj, img3):
         raise TypeError(f'img3Obj must be of type: {img3}')
 
@@ -718,7 +716,7 @@ def img3ToBytesIO(img3Obj: img3) -> bytes:
     tagsData = b''
 
     for tag in img3Obj.tags:
-        tagsData = pack('<4s2I', tag.magic, tag.totalSize, tag.dataSize) + tag.data + tag.padding
+        tagsData += pack('<4s2I', tag.magic, tag.totalSize, tag.dataSize) + tag.data + tag.padding
 
     img3Data = img3HeadData + tagsData
 
@@ -872,7 +870,7 @@ def verifySHSH(img3Obj: img3) -> bool | None:
 
     certTag = certTag[0]
     publicKey = extractPublicKeyFromDER(certTag.data)
-    img3Data = img3ToBytesIO(img3Obj)
+    img3Data = img3ToBytes(img3Obj)
     img3SHA1Data = getBufferAtIndex(img3Data, 12, img3Obj.sigCheckArea + 8)
     return doRSACheck(publicKey, shshTag.data, img3SHA1Data)
 
@@ -1077,7 +1075,7 @@ def signImg3(img3Obj: img3, blobData: dict, manifestData: dict) -> img3:
         if sha1Digest is None:
             continue
 
-        sha1Buffer = getBufferAtIndex(img3ToBytesIO(img3Obj), 12, img3Obj.sigCheckArea + 8)
+        sha1Buffer = getBufferAtIndex(img3ToBytes(img3Obj), 12, img3Obj.sigCheckArea + 8)
         bufferSHA1 = SHA1.new(sha1Buffer)
 
         if sha1Digest != bufferSHA1.digest():

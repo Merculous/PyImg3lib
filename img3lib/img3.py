@@ -875,29 +875,6 @@ def verifySHSH(img3Obj: img3) -> bool | None:
     return doRSACheck(publicKey, shshTag.data, img3SHA1Data)
 
 
-def getNestedImg3FromCERT(certTag: img3tag) -> img3 | None:
-    if not isinstance(certTag, img3tag):
-        raise TypeError(f'certTag must be of type: {img3tag}')
-
-    if getTagMagic(certTag) != b'CERT':
-        raise ValueError('Incorrect img3tag type!')
-
-    img3Data = extractNestedImages(certTag.data)
-
-    if not isinstance(img3Data, bytes):
-        raise TypeError(f'img3Data must be of type: {bytes}')
-
-    if not img3Data:
-        return
-
-    try:
-        img3Obj = readImg3(img3Data)
-    except ValueError:
-        return
-    else:
-        return img3Obj
-
-
 def removeTagFromImg3(img3Obj: img3, magic: bytes, removeAll: bool = False) -> img3:
     if not isinstance(img3Obj, img3):
         raise TypeError(f'img3Obj must be of type: {img3}')

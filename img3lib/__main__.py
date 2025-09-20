@@ -6,7 +6,7 @@ from binpatch.io import readBytesFromPath, writeBytesToPath
 
 from .img3 import (dataTagPaddingIsZeroed, findDifferencesBetweenTwoImg3s,
                    getNestedImageInCERT, getTagWithMagic, handleKernelData,
-                   img3Decrypt, img3Encrypt, img3ToBytes, img3ToBytes, make24KPWNLLB,
+                   img3Decrypt, img3Encrypt, img3ToBytes, make24KPWNLLB,
                    makeTag, parseKBAG, printImg3Info, printKBAG, readImg3,
                    replaceTagInImg3Obj, signImg3, verifySHSH)
 from .utils import readPlist

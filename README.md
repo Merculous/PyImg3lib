@@ -31,7 +31,7 @@ Remember an input img3 is always required
 
 * --kbag (Print KBAG tag info)
 
-* --kpwn -o (24KPWN_LLB.img3) (Create a 24KPWN LLB)
+* --kpwn --n72/--n88 (iPod/iPhone) -o (24KPWN_LLB.img3) (Create a 24KPWN LLB)
 
 * --blob (SHSH file.shsh2) --manifest (BuildManifest.plist) -o (SIGNED.img3) (Sign an img3 with a SHSH2 file)
 

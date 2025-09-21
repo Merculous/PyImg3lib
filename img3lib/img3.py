@@ -987,13 +987,13 @@ def make24KPWNLLB(img3Obj: img3, isN72: bool, isN88: bool) -> img3:
 
     shellcodeSize = len(shellcode)
     shellcodeStart = shellcodeOffset - certTagDataStartPos
-    certTagDataPadded = replaceBufferAtIndex(certTagDataPadded, shellcode, shellcodeStart, shellcodeSize)
+    certTagDataPadded = replaceBufferAtIndex(certTagDataPadded, bytes(shellcode), shellcodeStart, shellcodeSize)
 
     bootstrapSize = len(bootstrap)
     bootstrapStart = bootstrapOffset - certTagDataStartPos
     certTagDataPadded = replaceBufferAtIndex(certTagDataPadded, bootstrap, bootstrapStart, bootstrapSize)
 
-    newCertTag = makeTag(b'CERT', certTagDataPadded)
+    newCertTag = makeTag(b'CERT', bytes(certTagDataPadded))
     newImg3 = replaceTagInImg3Obj(newImg3, newCertTag)
 
     if img3Obj.fullSize != kpwnSize:

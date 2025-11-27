@@ -100,8 +100,8 @@ def getTagMagic(tag: img3tag) -> bytes:
     if not isinstance(tag.magic, bytes):
         raise TypeError(f'Magic must be of type: {bytes}')
 
-    if len(tag.magic) < 4:
-        raise ValueError('Magic must be at least 4 bytes!')
+    if len(tag.magic) != 4:
+        raise ValueError('Magic must be 4 bytes!')
 
     magic = tag.magic[::-1]
     return magic
@@ -237,8 +237,8 @@ def getImg3Magic(img3Obj: img3) -> bytes:
     if not isinstance(img3Obj.magic, bytes):
         raise TypeError(f'Magic must be of type: {bytes}')
 
-    if len(img3Obj.magic) < 4:
-        raise ValueError('Magic must be at least 4 bytes!')
+    if len(img3Obj.magic) != 4:
+        raise ValueError('Magic must be 4 bytes!')
 
     magic = img3Obj.magic[::-1]
     return magic
@@ -281,8 +281,8 @@ def getImg3Ident(img3Obj: img3) -> bytes:
     if not isinstance(img3Obj.ident, bytes):
         raise TypeError(f'Ident must be of type: {bytes}')
 
-    if len(img3Obj.ident) < 4:
-        raise ValueError('Ident must be at least 4 bytes!')
+    if len(img3Obj.ident) != 4:
+        raise ValueError('Ident must be 4 bytes!')
 
     ident = img3Obj.ident[::-1]
     return ident
@@ -357,8 +357,8 @@ def tagExists(img3Obj: img3, magic: bytes) -> list[int]:
     if not isinstance(img3Obj.tags, list):
         raise TypeError(f'Tags must be of type: {list}')
 
-    if len(magic) < 4:
-        raise ValueError('Magic must be at least 4 bytes!')
+    if len(magic) != 4:
+        raise ValueError('Magic must be 4 bytes!')
 
     matches = []
 
@@ -387,8 +387,8 @@ def getTagWithMagic(img3Obj: img3, magic: bytes) -> list[img3tag]:
     if not isinstance(magic, bytes):
         raise TypeError
 
-    if len(magic) < 4:
-        raise ValueError('Magic must be at least 4 bytes!')
+    if len(magic) != 4:
+        raise ValueError('Magic must be 4 bytes!')
 
     if magic not in TAGS:
         raise ValueError(f'Unknown tag magic: {magic}!')
@@ -885,8 +885,8 @@ def removeTagFromImg3(img3Obj: img3, magic: bytes, removeAll: bool = False) -> i
     if not isinstance(magic, bytes):
         raise TypeError(f'Magic must be of type: {bytes}')
 
-    if len(magic) < 4:
-        raise ValueError('Magic must be at least 4 bytes!')
+    if len(magic) != 4:
+        raise ValueError('Magic must be 4 bytes!')
 
     if magic not in TAGS:
         raise ValueError(f'Unknown magic: {magic}!')
@@ -1121,8 +1121,8 @@ def getNestedImageInCERT(certTag: img3tag) -> img3 | None:
 
     if magic != b'CERT':
         raise ValueError(f'Incorrect tag magic! Got {magic}!')
-    
-    if len(certTag.data) == 0:
+
+    if not certTag.data:
         raise ValueError('CERT data is empty!')
 
     derData = decodeDER(certTag.data)

@@ -36,3 +36,7 @@ Remember an input img3 is always required
 * --blob (SHSH file.shsh2) --manifest (BuildManifest.plist) -o (SIGNED.img3) (Sign an img3 with a SHSH2 file)
 
 * --cert --nested (Print img3 within CERT)
+
+# Documentation and extra info
+I'm too lazy to write docs, however I'm not really working on this library anymore (for the moment) \
+Please refer to the DeepWiki page about this project here: https://deepwiki.com/Merculous/PyImg3lib

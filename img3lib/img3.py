@@ -481,8 +481,8 @@ def makeTag(magic: bytes, data: bytes | None) -> img3tag:
     if not isinstance(data, bytes):
         raise TypeError(f'Data must be of type: {bytes}')
 
-    if len(magic) < 4:
-        raise ValueError('Magic must be at least 4 bytes!')
+    if len(magic) != 4:
+        raise ValueError('Magic must be 4 bytes!')
 
     if not data:
         raise ValueError('No data to read!')

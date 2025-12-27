@@ -13,11 +13,14 @@ Remember an input img3 is always required
 
 * -d -o (DATA.bin) (Decrypt an img3 and output its DATA tag)
     - --lzss (Decompress a kernelcache DATA tag)
+    - -iv IV (Decryption)
+    - -k key (Decryption)
+    - --gid (Decryption with GID key)
 
 * --data (DATA.bin) -o (output.img3) (Create a new img3 with custom DATA)
     - --lzss (Compress a kernelcache DATA tag)
     - -iv IV (Encryption)
-    - key Key (Encryption)
+    - -k Key (Encryption)
 
 * --diff (other.img3) (Find differences between two img3's)
 

@@ -1135,3 +1135,30 @@ def getNestedImageInCERT(certTag: img3tag) -> img3 | None:
         return
     else:
         return nestedImage
+
+
+def decryptKBAG(kbagTag: img3tag, gidKey: bytes) -> kbag:
+    if not isinstance(kbagTag, img3tag):
+        raise TypeError(f'KBAG must be of type: {img3tag}')
+    
+    if not isinstance(gidKey, bytes):
+        raise TypeError(f'GIDKey must be of type: {bytes}')
+
+    if not gidKey:
+        raise ValueError('GIDKey is empty!')
+
+    if len(gidKey) != 32:
+        raise ValueError('GIDKey must be 32 bytes!')
+ 
+    kbagObj = parseKBAG(kbagTag)
+    cryptBuffer = kbagObj.iv + kbagObj.key
+
+    if not isAligned(len(cryptBuffer), 16):
+        raise ValueError('Crypt buffer is not a multiple of 16!')
+
+    decryptedBuffer = doAES(False, kbagObj.aesType, cryptBuffer, b'\x00' * 16, gidKey)
+
+    kbagObj.iv = getBufferAtIndex(decryptedBuffer, 0, 16)
+    kbagObj.key = getBufferAtIndex(decryptedBuffer, 16, 32)
+
+    return kbagObj

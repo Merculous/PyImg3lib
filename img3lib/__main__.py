@@ -4,7 +4,8 @@ from pathlib import Path
 
 from binpatch.io import readBytesFromPath, writeBytesToPath
 
-from .img3 import (dataTagPaddingIsZeroed, findDifferencesBetweenTwoImg3s,
+from .img3 import (KBAG_CRYPT_STATE_PRODUCTION, dataTagPaddingIsZeroed,
+                   decryptKBAG, findDifferencesBetweenTwoImg3s,
                    getNestedImageInCERT, getTagWithMagic, handleKernelData,
                    img3Decrypt, img3Encrypt, img3ToBytes, make24KPWNLLB,
                    makeTag, parseKBAG, printImg3Info, printKBAG, readImg3,
@@ -36,6 +37,7 @@ def main():
     parser.add_argument('--kaslr', action='store_true', help='kernel supports kASLR (iOS 6+)')
     parser.add_argument('--kbag', action='store_true', help='print KBAG(s)')
     parser.add_argument('--nested', action='store_true', help='print nested Img3 in CERT')
+    parser.add_argument('--gid', action='store_true', help='Decrypt using GID key')
 
     parser.add_argument('-iv', metavar='iv', type=str)
     parser.add_argument('-k', metavar='key', type=str)
@@ -60,9 +62,31 @@ def main():
         if not kbagTag:
             return print('This image does not contain a KBAG tag!')
 
-        kbagTag = kbagTag[0]
-        kbagObj = parseKBAG(kbagTag)
-        decryptedDataTag, _ = img3Decrypt(dataTag, kbagObj.aesType, b''.fromhex(args.iv), b''.fromhex(args.k))
+        kbagObj = None
+
+        for kbag in kbagTag:
+            kbagObj = parseKBAG(kbag)
+
+            if kbagObj.cryptState != KBAG_CRYPT_STATE_PRODUCTION:
+                continue
+
+            kbagTag = kbag
+            break
+
+        if not kbagObj:
+            raise ValueError('KBAG object is NONE!')
+
+        iv = None if not args.iv else b''.fromhex(args.iv)
+        key = None if not args.k else b''.fromhex(args.k)
+
+        if args.gid:
+            iv = b'\x00' * 16
+            kbagObj = decryptKBAG(kbagTag, key)
+            
+            iv = kbagObj.iv
+            key = kbagObj.key
+
+        decryptedDataTag, _ = img3Decrypt(dataTag, kbagObj.aesType, iv, key)
 
         if args.lzss:
             decryptedDataTag = handleKernelData(decryptedDataTag)

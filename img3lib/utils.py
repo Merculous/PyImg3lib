@@ -44,8 +44,8 @@ def pad(padSize: int, data: bytearray) -> bytearray:
     paddedSize = padNumber(dataSize, padSize)
     paddingSize = paddedSize - dataSize
     paddingData = b'\x00' * paddingSize
-    data.extend(paddingData)
 
+    data.extend(paddingData)
     return data
 
 

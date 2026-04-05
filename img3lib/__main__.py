@@ -1,19 +1,21 @@
 
 from argparse import ArgumentParser
 from pathlib import Path
+from struct import unpack
 
 from binpatch.io import readBytesFromPath, writeBytesToPath
 
+from .crypto import A4_GID_KEY
 from .img3 import (KBAG_CRYPT_STATE_PRODUCTION, dataTagPaddingIsZeroed,
                    decryptKBAG, findDifferencesBetweenTwoImg3s,
-                   getNestedImageInCERT, getTagWithMagic, handleKernelData,
-                   img3Decrypt, img3Encrypt, img3ToBytes, make24KPWNLLB,
-                   makeTag, parseKBAG, printImg3Info, printKBAG, readImg3,
-                   replaceTagInImg3Obj, signImg3, verifySHSH)
+                   getNestedImageInCERT, getTagData, getTagWithMagic,
+                   handleKernelData, img3Decrypt, img3Encrypt, img3ToBytes,
+                   make24KPWNLLB, makeTag, parseKBAG, printImg3Info, printKBAG,
+                   readImg3, replaceTagInImg3Obj, signImg3, verifySHSH)
 from .utils import readPlist
 
 
-def main():
+def main() -> None:
     parser = ArgumentParser()
 
     parser.add_argument('-i', help='input file (img3)', metavar='img3', type=Path)
@@ -37,7 +39,7 @@ def main():
     parser.add_argument('--kaslr', action='store_true', help='kernel supports kASLR (iOS 6+)')
     parser.add_argument('--kbag', action='store_true', help='print KBAG(s)')
     parser.add_argument('--nested', action='store_true', help='print nested Img3 in CERT')
-    parser.add_argument('--gid', action='store_true', help='Decrypt using GID key')
+    parser.add_argument('--gid', action='store_true', help='decrypt using GID key')
 
     parser.add_argument('-iv', metavar='iv', type=str)
     parser.add_argument('-k', metavar='key', type=str)
@@ -54,13 +56,15 @@ def main():
         dataTag = getTagWithMagic(img3Obj, b'DATA')
 
         if not dataTag:
-            return print('This image does not contain a DATA tag!')
+            print('This image does not contain a DATA tag!')
+            return
 
         dataTag = dataTag[0]
         kbagTag = getTagWithMagic(img3Obj, b'KBAG')
 
         if not kbagTag:
-            return print('This image does not contain a KBAG tag!')
+            print('This image does not contain a KBAG tag!')
+            return
 
         kbagObj = None
 
@@ -80,9 +84,33 @@ def main():
         key = None if not args.k else b''.fromhex(args.k)
 
         if args.gid:
+            # Try looking in nested Img3 in CERT for CHIP
+            certTag = getTagWithMagic(img3Obj, b'CERT')
+
+            if not certTag:
+                raise ValueError('This image does not contain a CERT tag!')
+
+            certTag = certTag[0]
+            nestedImg3 = getNestedImageInCERT(certTag)
+
+            if not nestedImg3:
+                raise ValueError('This image does not contain a nested Img3!')
+
+            chipTag = getTagWithMagic(nestedImg3, b'CHIP')
+
+            if not chipTag:
+                raise ValueError('Nested Img3 does not contain a CHIP tag!')
+
+            chipTag = chipTag[0]
+            chip = unpack('<I', getTagData(chipTag))[0]
+
+            if chip == 0x8930:
+                print('A4 device detected! Decrypting with internal GID key!')
+                key = A4_GID_KEY
+
             iv = b'\x00' * 16
             kbagObj = decryptKBAG(kbagTag, key)
-            
+
             iv = kbagObj.iv
             key = kbagObj.key
 
@@ -91,7 +119,8 @@ def main():
         if args.lzss:
             decryptedDataTag = handleKernelData(decryptedDataTag)
 
-        return writeBytesToPath(args.o, decryptedDataTag.data)
+        writeBytesToPath(args.o, decryptedDataTag.data)
+        return
 
     if args.data and args.o:
         newData = readBytesFromPath(args.data)
@@ -104,14 +133,16 @@ def main():
             kbagTag = getTagWithMagic(img3Obj, b'KBAG')
 
             if not kbagTag:
-                return print('This image does not contain a KBAG tag!')
+                print('This image does not contain a KBAG tag!')
+                return
 
             kbagTag = kbagTag[0]
             kbagObj = parseKBAG(kbagTag)
             origDataTag = getTagWithMagic(img3Obj, b'DATA')
 
             if not origDataTag:
-                return print('This image does not contain a DATA tag!')
+                print('This image does not contain a DATA tag!')
+                return
 
             origDataTag = origDataTag[0]
             origDataPaddingZeroed = dataTagPaddingIsZeroed(origDataTag)
@@ -119,24 +150,29 @@ def main():
 
         newImg3 = replaceTagInImg3Obj(img3Obj, newDataTag)
         img3Data = img3ToBytes(newImg3)
-        return writeBytesToPath(args.o, img3Data)
+        writeBytesToPath(args.o, img3Data)
+        return
 
     if args.diff:
         secondImg3Data = readBytesFromPath(args.diff)
         secondImg3 = readImg3(secondImg3Data)
-        return findDifferencesBetweenTwoImg3s(img3Obj, secondImg3)
+        findDifferencesBetweenTwoImg3s(img3Obj, secondImg3)
+        return
 
     if args.a and not args.cert:
-        return printImg3Info(img3Obj)
+        printImg3Info(img3Obj)
+        return
 
     if args.o and args.cert:
         certTag = getTagWithMagic(img3Obj, b'CERT')
 
         if not certTag:
-            return print('This image does not contain a CERT tag!')
+            print('This image does not contain a CERT tag!')
+            return
 
         certTag = certTag[0]
-        return writeBytesToPath(args.o, certTag.data)
+        writeBytesToPath(args.o, certTag.data)
+        return
 
     if args.o and args.x:
         dataTag = getTagWithMagic(img3Obj, b'DATA')
@@ -145,7 +181,8 @@ def main():
             return print('This image does not contain a DATA tag!')
 
         dataTag = dataTag[0]
-        return writeBytesToPath(args.o, dataTag.data)
+        writeBytesToPath(args.o, dataTag.data)
+        return
 
     if args.v:
         shshValid = verifySHSH(img3Obj)
@@ -168,7 +205,8 @@ def main():
         kbagTags = getTagWithMagic(img3Obj, b'KBAG')
 
         if not kbagTags:
-            return print('This image does not contain a KBAG tag!')
+            print('This image does not contain a KBAG tag!')
+            return
 
         for tag in kbagTags:
             printKBAG(tag)
@@ -177,24 +215,27 @@ def main():
 
     if args.kpwn and args.o:
         kpwnImg3 = make24KPWNLLB(img3Obj, args.n72, args.n88)
-        return writeBytesToPath(args.o, img3ToBytes(kpwnImg3))
+        writeBytesToPath(args.o, img3ToBytes(kpwnImg3))
+        return
 
     if args.blob and args.manifest and args.o:
         blobData = readPlist(args.blob)
         manifestData = readPlist(args.manifest)
         signedImg3 = signImg3(img3Obj, blobData, manifestData)
         img3Data = img3ToBytes(signedImg3)
-        return writeBytesToPath(args.o, img3Data)
+        writeBytesToPath(args.o, img3Data)
+        return
 
     if args.cert and args.nested:
         certTag = getTagWithMagic(img3Obj, b'CERT')
 
         if not certTag:
-            return print('This image does not contain a CERT tag!')
+            print('This image does not contain a CERT tag!')
+            return
 
         certTag = certTag[0]
         nestedImg3 = getNestedImageInCERT(certTag)
-        
+
         if nestedImg3:
             printImg3Info(nestedImg3)
         else:

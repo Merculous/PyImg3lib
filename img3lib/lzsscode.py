@@ -76,7 +76,7 @@ def compress(data: bytes, kASLRSupported: bool) -> bytes:
 def decompress(data: bytes) -> bytes:
     if not isinstance(data, bytes):
         raise TypeError(f'Data must be of type: {bytes}')
-    
+
     if not data:
         raise ValueError('No data to read!')
 

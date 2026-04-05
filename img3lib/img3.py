@@ -22,6 +22,7 @@ IMG3_MAGIC = b'Img3'
 
 IMG3_HEAD_SIZE = 20
 TAG_HEAD_SIZE = 12
+KBAG_HEAD_SIZE = 8
 
 KBAG_CRYPT_STATE_PRODUCTION = 1
 KBAG_CRYPT_STATE_DEVELOPMENT = 2
@@ -64,12 +65,8 @@ CHIPS = (
 )
 
 
-def initTag() -> img3tag:
+def initImg3Tag() -> img3tag:
     return img3tag(b'', 0, 0, b'', b'')
-
-
-def initImg3() -> img3:
-    return img3(b'', 0, 0, 0, b'', [])
 
 
 def readTagHead(data: bytes) -> img3tag:
@@ -82,15 +79,15 @@ def readTagHead(data: bytes) -> img3tag:
     if len(data) < TAG_HEAD_SIZE:
         raise ValueError('Not enough data to read!')
 
-    tagHeadData = getBufferAtIndex(data, 0, TAG_HEAD_SIZE)
-    magic, totalSize, dataSize = unpack('<4s2I', tagHeadData)
+    headData = getBufferAtIndex(data, 0, TAG_HEAD_SIZE)
+    magic, totalSize, dataSize = unpack('<4s2I', headData)
 
-    tag = initTag()
-    tag.magic = magic
-    tag.totalSize = totalSize
-    tag.dataSize = dataSize
+    tagObj = initImg3Tag()
+    tagObj.magic = magic
+    tagObj.totalSize = totalSize
+    tagObj.dataSize = dataSize
 
-    return tag
+    return tagObj
 
 
 def getTagMagic(tag: img3tag) -> bytes:
@@ -205,6 +202,10 @@ def getTagPadding(tag: img3tag) -> bytes:
     return tag.padding
 
 
+def initImg3() -> img3:
+    return img3(b'', 0, 0, 0, b'', [], b'')
+
+
 def readImg3Head(data: bytes) -> img3:
     if not isinstance(data, bytes):
         raise TypeError(f'Data must be of type: {bytes}')
@@ -216,9 +217,9 @@ def readImg3Head(data: bytes) -> img3:
 
     if dataSize < IMG3_HEAD_SIZE:
         raise ValueError('Not enough data to read!')
-    
-    img3HeadData = getBufferAtIndex(data, 0, IMG3_HEAD_SIZE)
-    magic, fullSize, sizeNoPack, sigCheckArea, ident = unpack('<4s3I4s', img3HeadData)
+
+    headData = getBufferAtIndex(data, 0, IMG3_HEAD_SIZE)
+    magic, fullSize, sizeNoPack, sigCheckArea, ident = unpack('<4s3I4s', headData)
 
     img3Obj = initImg3()
     img3Obj.magic = magic
@@ -320,12 +321,6 @@ def readImg3(data: bytes) -> img3:
     if getImg3Magic(img3Obj) != IMG3_MAGIC:
         raise ValueError('This is not an Img3 file!')
 
-    if getImg3FullSize(img3Obj) != dataSize:
-        raise ValueError(f'Size mismatch. Expected {dataSize}, got {getImg3FullSize(img3Obj)}')
-
-    if getImg3SizeNoPack(img3Obj) != dataSize - IMG3_HEAD_SIZE:
-        raise ValueError(f'Size mismatch. Expected {dataSize-IMG3_HEAD_SIZE}, got {getImg3SizeNoPack(img3Obj)}')
-
     if getImg3Ident(img3Obj) not in TYPES:
         raise ValueError(f'{getImg3Ident(img3Obj)} is not a valid type!')
 
@@ -333,7 +328,17 @@ def readImg3(data: bytes) -> img3:
 
     while i in range(getImg3FullSize(img3Obj)):
         tagData = getBufferAtIndex(data, i, getImg3FullSize(img3Obj) - i)
-        tag = readTag(tagData)
+
+        try:
+            tag = readTag(tagData)
+        except ValueError:
+            # We're at the end of the img3 (img3.fullSize)
+            if i + len(tagData) != getImg3FullSize(img3Obj):
+                continue
+
+            img3Obj.padding = getBufferAtIndex(data, i, len(tagData))
+            i += len(tagData)
+            continue
 
         if not isinstance(tag, img3tag):
             raise TypeError(f'Tag must be of type: {img3tag}')
@@ -403,13 +408,12 @@ def initKbag() -> kbag:
     return kbag(0, 0, b'', b'')
 
 
-def parseKBAGHead(kbagTag: img3tag) -> kbag:
-    if not isinstance(kbagTag, img3tag):
-        raise TypeError(f'kbagTag must be of type: {img3tag}')
+def parseKBAGHead(data: bytes) -> kbag:
+    if not isinstance(data, bytes):
+        raise TypeError(f'Data must be of type: {bytes}')
 
-    kbagHeadSize = 8
-    kbagHeadData = getBufferAtIndex(kbagTag.data, 0, kbagHeadSize)
-    cryptState, aesType = unpack('<2I', kbagHeadData)
+    headData = getBufferAtIndex(data, 0, KBAG_HEAD_SIZE)
+    cryptState, aesType = unpack('<2I', headData)
 
     kbagObj = initKbag()
     kbagObj.cryptState = cryptState
@@ -422,7 +426,7 @@ def parseKBAG(kbagTag: img3tag) -> kbag:
     if not isinstance(kbagTag, img3tag):
         raise TypeError(f'kbagTag must be of type: {img3tag}')
 
-    kbagObj = parseKBAGHead(kbagTag)
+    kbagObj = parseKBAGHead(kbagTag.data)
 
     if not isinstance(kbagObj.cryptState, int):
         raise TypeError(f'cryptState must be of type: {int}')
@@ -497,7 +501,7 @@ def makeTag(magic: bytes, data: bytes | None) -> img3tag:
     paddingSize = paddedDataSize - dataSize
     paddedData = bytes(paddedData)
 
-    tag = initTag()
+    tag = initImg3Tag()
     tag.magic = magic[::-1]
     tag.totalSize = TAG_HEAD_SIZE + paddedDataSize
     tag.dataSize = dataSize
@@ -702,8 +706,8 @@ def img3ToBytes(img3Obj: img3) -> bytes:
     img3HeadData = pack('<4s3I4s',
         img3Obj.magic,
         img3Obj.fullSize,
-        img3Obj.sizeNoPack, 
-        img3Obj.sigCheckArea, 
+        img3Obj.sizeNoPack,
+        img3Obj.sigCheckArea,
         img3Obj.ident
     )
 
@@ -1017,7 +1021,6 @@ def insertTagInImg3(img3Obj: img3, tag: img3tag) -> img3:
 
     img3Obj.tags.append(tag)
     return updateImg3Head(img3Obj)
-
 
 
 def signImg3(img3Obj: img3, blobData: dict, manifestData: dict) -> img3:

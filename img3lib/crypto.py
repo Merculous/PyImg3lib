@@ -10,6 +10,10 @@ AES_SIZES = {
     256: 32
 }
 
+# Derived from here (Axi0mX and tihmstar) https://x.com/axi0mX/status/1594897094233710594?s=20
+A4_GID_KEY = b''.fromhex('e77f3e9c5e6c00086aa7b68e58994a639cc360d6027c90b53eb8b3b015f72f56')
+
+
 def doAES(encrypt: bool, aesType: int, data: bytes, iv: bytes, key: bytes) -> bytes:
     if not isinstance(encrypt, bool):
         raise TypeError(f'Encrypt must be of type: {bool}')

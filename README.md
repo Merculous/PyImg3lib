@@ -3,10 +3,11 @@ This code will interact with Apple's img3 data.
 
 # Credits
 
-axi0mX: ipwndfu (img3 stuff) \
+axi0mX: ipwndfu (img3 stuff, GID key) \
 plzdonthaxme (plx): General help \
 m1stadev: lzss fixes \
-planetbeing: 24KPWN LLB Payload
+planetbeing: 24KPWN LLB Payload \
+tihmstar: 0x8930 (A4) GID key
 
 # Usage
 Remember an input img3 is always required

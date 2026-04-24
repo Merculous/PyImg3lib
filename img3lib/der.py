@@ -11,6 +11,7 @@ from Crypto.PublicKey import RSA
 # TODO
 # Start using Enum
 
+
 class DERTypes:
     Primitive = asn1.Types.Primitive
     Constructed = asn1.Types.Constructed

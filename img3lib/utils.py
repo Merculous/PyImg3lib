@@ -1,59 +1,34 @@
 
-from pathlib import Path
 from plistlib import loads
 from typing import Any
 
 
-def isAligned(n: int, align: int) -> bool:
-    if not isinstance(n, int):
-        raise TypeError(f'N must be of type: {int}')
-
-    if not isinstance(align, int):
-        raise TypeError(f'Align must be of type: {int}')
-
+def isNumberAligned(n: int, align: int) -> bool:
     return n % align == 0
 
 
-def padNumber(n: int, align: int) -> int:
-    if not isinstance(n, int):
-        raise TypeError(f'N must be of type: {int}')
+def alignNumber(n: int, align: int) -> int:
+    alignedSize = n
 
-    if not isinstance(align, int):
-        raise TypeError(f'Align must be of type: {int}')
+    while not isNumberAligned(alignedSize, align):
+        alignedSize += 1
 
-    paddedSize = n
-
-    while not isAligned(paddedSize, align):
-        paddedSize += 1
-
-    return paddedSize
+    return alignedSize
 
 
-def pad(padSize: int, data: bytearray) -> bytearray:
-    if not isinstance(padSize, int):
-        raise TypeError(f'PadSize must be of type: {int}')
+def initPadding(size: int) -> bytes:
+    return b'\x00' * size
 
-    if not isinstance(data, bytearray):
-        raise TypeError(f'Data must be of type: {bytearray}')
 
-    if not data:
-        raise ValueError('No data to read!')
-
+def appendPaddingToData(padSize: int, data: bytes) -> bytes:
     dataSize = len(data)
 
-    paddedSize = padNumber(dataSize, padSize)
+    paddedSize = alignNumber(dataSize, padSize)
     paddingSize = paddedSize - dataSize
-    paddingData = b'\x00' * paddingSize
+    paddingData = data + initPadding(paddingSize)
 
-    data.extend(paddingData)
-    return data
+    return paddingData
 
 
-def readPlist(path: Path) -> Any:
-    if not isinstance(path, Path):
-        raise TypeError(f'Path must be of type: {Path}')
-
-    if not path.is_file():
-        raise ValueError(f'{path} is not a file!')
-
-    return loads(path.read_bytes())
+def readPlistData(data: bytes) -> Any:
+    return loads(data)

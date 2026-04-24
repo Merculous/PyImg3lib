@@ -19,7 +19,6 @@ class img3:
     sigCheckArea: int
     ident: bytes
     tags: list[img3tag]
-    padding: bytes
 
 
 @dataclass

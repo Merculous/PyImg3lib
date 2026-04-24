@@ -1,22 +1,24 @@
 
 from binascii import hexlify
+from functools import partial
 from itertools import zip_longest
 from struct import pack, unpack
 
 from binpatch.utils import getBufferAtIndex, replaceBufferAtIndex
 from Crypto.Hash import SHA1
 
-from .crypto import AES_SIZES, doAES, doRSACheck
+from .crypto import (AES_BLOCK_SIZE, AES_SIZES, GID_KEY_SIZE, IV_DEFAULT_KEY,
+                     SHSH_KEY_SIZE, doAES, doRSACheck)
 from .der import (decodeDER, extractNestedImages, extractPublicKeyFromDER,
                   extractSHA1HashesFromAPTicket)
+from .kernel import LZSS_SIGNATURE, MACHO_MAGIC, compress, decompress
 from .kpwn import (KPWN_BOOTSTRAP_OFFSET, KPWN_SHELLCODE_OFFSET,
                    N72_24KPWN_SIZE, N72_BOOTSTRAP, N72_SHELLCODE,
                    N72_SHELLCODE_ADDRESS, N72_SHELLCODE_DWORD_INDEX,
                    N88_24KPWN_SIZE, N88_BOOTSTRAP, N88_SHELLCODE,
                    N88_SHELLCODE_ADDRESS, N88_SHELLCODE_DWORD_INDEX)
-from .lzsscode import compress, decompress
 from .types import img3, img3tag, kbag
-from .utils import isAligned, pad
+from .utils import appendPaddingToData, initPadding
 
 IMG3_MAGIC = b'Img3'
 
@@ -24,25 +26,37 @@ IMG3_HEAD_SIZE = 20
 TAG_HEAD_SIZE = 12
 KBAG_HEAD_SIZE = 8
 
-KBAG_CRYPT_STATE_PRODUCTION = 1
-KBAG_CRYPT_STATE_DEVELOPMENT = 2
+IMG3_MAGIC_SIZE = 4
+IMG3_IDENT_SIZE = 4
+TAG_MAGIC_SIZE = 4
+
+KBAG_CRYPT_STATES = {
+    1: 'Production',
+    2: 'Development'
+}
 
 TAGS = (
-    b'VERS', b'SEPO', b'SDOM',
-    b'PROD', b'CHIP', b'BORD',
-    b'KBAG', b'SHSH', b'CERT',
-    b'ECID', b'TYPE', b'DATA',
-    b'NONC', b'CEPO', b'OVRD',
-    b'RAND', b'SALT'
+    b'VERS', b'SEPO',
+    b'SDOM', b'PROD',
+    b'CHIP', b'BORD',
+    b'KBAG', b'SHSH',
+    b'CERT', b'ECID',
+    b'TYPE', b'DATA',
+    b'NONC', b'CEPO',
+    b'OVRD', b'RAND',
+    b'SALT',
 )
 
 TYPES = (
-    b'krnl', b'rdsk', b'bat1',
-    b'chg1', b'illb', b'batF',
-    b'nsrv', b'chg0', b'dtre',
-    b'glyC', b'bat0', b'logo',
-    b'ibot', b'glyP', b'recm',
-    b'ibec', b'ibss', b'cert',
+    b'krnl', b'rdsk',
+    b'bat1', b'chg1',
+    b'illb', b'batF',
+    b'nsrv', b'chg0',
+    b'dtre', b'glyC',
+    b'bat0', b'logo',
+    b'ibot', b'glyP',
+    b'recm', b'ibec',
+    b'ibss', b'cert',
     b'diag'
 )
 
@@ -70,14 +84,8 @@ def initImg3Tag() -> img3tag:
 
 
 def readTagHead(data: bytes) -> img3tag:
-    if not isinstance(data, bytes):
-        raise TypeError(f'Data must be of type: {bytes}')
-
-    if not data:
-        raise ValueError('No data to read!')
-
     if len(data) < TAG_HEAD_SIZE:
-        raise ValueError('Not enough data to read!')
+        raise ValueError(f'Data must be at least {TAG_HEAD_SIZE} bytes!')
 
     headData = getBufferAtIndex(data, 0, TAG_HEAD_SIZE)
     magic, totalSize, dataSize = unpack('<4s2I', headData)
@@ -90,91 +98,22 @@ def readTagHead(data: bytes) -> img3tag:
     return tagObj
 
 
-def getTagMagic(tag: img3tag) -> bytes:
-    if not isinstance(tag, img3tag):
-        raise TypeError(f'Tag must be of type: {img3tag}')
-
-    if not isinstance(tag.magic, bytes):
-        raise TypeError(f'Magic must be of type: {bytes}')
-
-    if len(tag.magic) != 4:
-        raise ValueError('Magic must be 4 bytes!')
-
-    magic = tag.magic[::-1]
-    return magic
-
-
-def getTagTotalSize(tag: img3tag) -> int:
-    if not isinstance(tag, img3tag):
-        raise TypeError(f'Tag must be of type: {img3tag}')
-
-    if not isinstance(tag.totalSize, int):
-        raise TypeError(f'totalSize must be of type: {int}')
-
-    return tag.totalSize
-
-
-def getTagDataSize(tag: img3tag) -> int:
-    if not isinstance(tag, img3tag):
-        raise TypeError(f'Tag must be of type: {img3tag}')
-
-    if not isinstance(tag.dataSize, int):
-        raise TypeError(f'dataSize must be of type: {int}')
-
-    return tag.dataSize
-
-
-def getTagPadSize(tag: img3tag) -> int:
-    if not isinstance(tag, img3tag):
-        raise TypeError(f'Tag must be of type: {img3tag}')
-
-    if not isinstance(tag.totalSize, int):
-        raise TypeError(f'totalSize must be of type: {int}')
-
-    if not isinstance(tag.dataSize, int):
-        raise TypeError(f'dataSize must be of type: {int}')
-
-    padSize = tag.totalSize - tag.dataSize - TAG_HEAD_SIZE
-    return padSize
+def getTagPaddingSize(tag: img3tag) -> int:
+    return tag.totalSize - tag.dataSize - TAG_HEAD_SIZE
 
 
 def readTag(data: bytes) -> img3tag:
-    if not isinstance(data, bytes):
-        raise TypeError(f'Data must be of type: {bytes}')
-
-    dataSize = len(data)
-
-    if not data:
-        raise ValueError('No data to read!')
-
-    if dataSize < TAG_HEAD_SIZE:
-        raise ValueError('Not enough data to read!')
+    if len(data) < TAG_HEAD_SIZE:
+        raise ValueError(f'Data must be at least {TAG_HEAD_SIZE} bytes!')
 
     tag = readTagHead(data)
+    tagMagicReversed = tag.magic[::-1]
 
-    if not isinstance(tag.magic, bytes):
-        raise TypeError(f'Magic must be of type: {bytes}')
-
-    if not isinstance(tag.totalSize, int):
-        raise TypeError(f'totalSize must be of type: {int}')
-
-    if not isinstance(tag.dataSize, int):
-        raise TypeError(f'dataSize must be of type: {int}')
-
-    if not isinstance(tag.data, bytes):
-        raise TypeError(f'Data must be of type: {bytes}')
-
-    if not isinstance(tag.padding, bytes):
-        raise TypeError(f'Padding must be of type: {bytes}')
-
-    tagMagic = getTagMagic(tag)
-
-    if tagMagic not in TAGS:
-        raise ValueError(f'Unknown tag magic: {tagMagic}')
+    if tagMagicReversed not in TAGS:
+        raise ValueError(f'Unknown tag magic: {tagMagicReversed.decode()}')
 
     tag.data = getBufferAtIndex(data, TAG_HEAD_SIZE, tag.dataSize)
-
-    paddingSize = getTagPadSize(tag)
+    paddingSize = getTagPaddingSize(tag)
 
     if paddingSize >= 1:
         tag.padding = getBufferAtIndex(data, TAG_HEAD_SIZE + tag.dataSize, paddingSize)
@@ -182,41 +121,13 @@ def readTag(data: bytes) -> img3tag:
     return tag
 
 
-def getTagData(tag: img3tag) -> bytes:
-    if not isinstance(tag, img3tag):
-        raise TypeError(f'Tag must be of type: {img3tag}')
-
-    if not isinstance(tag.data, bytes):
-        raise TypeError(f'Data must be of type: {bytes}')
-
-    return tag.data
-
-
-def getTagPadding(tag: img3tag) -> bytes:
-    if not isinstance(tag, img3tag):
-        raise TypeError(f'Tag must be of type: {img3tag}')
-
-    if not isinstance(tag.padding, bytes):
-        raise TypeError(f'Padding must be of type: {bytes}')
-
-    return tag.padding
-
-
 def initImg3() -> img3:
-    return img3(b'', 0, 0, 0, b'', [], b'')
+    return img3(b'', 0, 0, 0, b'', [])
 
 
 def readImg3Head(data: bytes) -> img3:
-    if not isinstance(data, bytes):
-        raise TypeError(f'Data must be of type: {bytes}')
-
-    dataSize = len(data)
-
-    if not data:
-        raise ValueError('No data to read!')
-
-    if dataSize < IMG3_HEAD_SIZE:
-        raise ValueError('Not enough data to read!')
+    if len(data) < IMG3_HEAD_SIZE:
+        raise ValueError(f'Data must be at least {IMG3_HEAD_SIZE} bytes!')
 
     headData = getBufferAtIndex(data, 0, IMG3_HEAD_SIZE)
     magic, fullSize, sizeNoPack, sigCheckArea, ident = unpack('<4s3I4s', headData)
@@ -231,139 +142,42 @@ def readImg3Head(data: bytes) -> img3:
     return img3Obj
 
 
-def getImg3Magic(img3Obj: img3) -> bytes:
-    if not isinstance(img3Obj, img3):
-        raise TypeError(f'img3Obj must be of type: {img3}')
-
-    if not isinstance(img3Obj.magic, bytes):
-        raise TypeError(f'Magic must be of type: {bytes}')
-
-    if len(img3Obj.magic) != 4:
-        raise ValueError('Magic must be 4 bytes!')
-
-    magic = img3Obj.magic[::-1]
-    return magic
-
-
-def getImg3FullSize(img3Obj: img3) -> int:
-    if not isinstance(img3Obj, img3):
-        raise TypeError(f'img3Obj must be of type: {img3}')
-
-    if not isinstance(img3Obj.fullSize, int):
-        raise TypeError(f'fullSize must be of type: {int}')
-
-    return img3Obj.fullSize
-
-
-def getImg3SizeNoPack(img3Obj: img3) -> int:
-    if not isinstance(img3Obj, img3):
-        raise TypeError(f'img3Obj must be of type: {img3}')
-
-    if not isinstance(img3Obj.sizeNoPack, int):
-        raise TypeError(f'sizeNoPack must be of type: {int}')
-
-    return img3Obj.sizeNoPack
-
-
-def getImg3SigCheckArea(img3Obj: img3) -> int:
-    if not isinstance(img3Obj, img3):
-        raise TypeError(f'img3Obj must be of type: {img3}')
-
-    if not isinstance(img3Obj.sigCheckArea, int):
-        raise TypeError(f'sigCheckArea must be of type: {int}')
-
-    return img3Obj.sigCheckArea
-
-
-def getImg3Ident(img3Obj: img3) -> bytes:
-    if not isinstance(img3Obj, img3):
-        raise TypeError(f'img3Obj must be of type: {img3}')
-
-    if not isinstance(img3Obj.ident, bytes):
-        raise TypeError(f'Ident must be of type: {bytes}')
-
-    if len(img3Obj.ident) != 4:
-        raise ValueError('Ident must be 4 bytes!')
-
-    ident = img3Obj.ident[::-1]
-    return ident
-
-
 def readImg3(data: bytes) -> img3:
-    if not isinstance(data, bytes):
-        raise TypeError(f'Data must be of type: {bytes}')
-
-    if not data:
-        raise ValueError('No data to read!')
-
-    dataSize = len(data)
-
-    if dataSize < IMG3_HEAD_SIZE:
-        raise ValueError('Not enough data to read!')
+    if len(data) < IMG3_HEAD_SIZE:
+        raise ValueError(f'Data must be at least {IMG3_HEAD_SIZE} bytes!')
 
     img3Obj = readImg3Head(data)
+    img3MagicReversed = img3Obj.magic[::-1]
 
-    if not isinstance(img3Obj.magic, bytes):
-        raise TypeError(f'Magic must be of type: {bytes}')
+    if img3MagicReversed != IMG3_MAGIC:
+        raise ValueError(f'This is not an Img3 file! Expected magic {IMG3_MAGIC} but got {img3MagicReversed}!')
 
-    if not isinstance(img3Obj.fullSize, int):
-        raise TypeError(f'fullSize must be of type: {int}')
+    identReversed = img3Obj.ident[::-1]
 
-    if not isinstance(img3Obj.sizeNoPack, int):
-        raise TypeError(f'sizeNoPack must be of type: {int}')
-
-    if not isinstance(img3Obj.sigCheckArea, int):
-        raise TypeError(f'sigCheckArea must be of type: {int}')
-
-    if not isinstance(img3Obj.ident, bytes):
-        raise TypeError(f'Ident must be of type: {bytes}')
-
-    if getImg3Magic(img3Obj) != IMG3_MAGIC:
-        raise ValueError('This is not an Img3 file!')
-
-    if getImg3Ident(img3Obj) not in TYPES:
-        raise ValueError(f'{getImg3Ident(img3Obj)} is not a valid type!')
+    if identReversed not in TYPES:
+        raise ValueError(f'{identReversed.decode()} is not a valid type!')
 
     i = IMG3_HEAD_SIZE
+    fullSize = img3Obj.fullSize
 
-    while i in range(getImg3FullSize(img3Obj)):
-        tagData = getBufferAtIndex(data, i, getImg3FullSize(img3Obj) - i)
-
-        try:
-            tag = readTag(tagData)
-        except ValueError:
-            # We're at the end of the img3 (img3.fullSize)
-            if i + len(tagData) != getImg3FullSize(img3Obj):
-                continue
-
-            img3Obj.padding = getBufferAtIndex(data, i, len(tagData))
-            i += len(tagData)
-            continue
-
-        if not isinstance(tag, img3tag):
-            raise TypeError(f'Tag must be of type: {img3tag}')
-
+    while i in range(fullSize):
+        tagData = getBufferAtIndex(data, i, fullSize - i)
+        tag = readTag(tagData)
         img3Obj.tags.append(tag)
-        i += getTagTotalSize(tag)
+        i += tag.totalSize
 
-    if i != getImg3FullSize(img3Obj):
-        raise ValueError(f'Index error. Expected {getImg3FullSize(img3Obj)}, got {i}!')
+    if i != fullSize:
+        raise ValueError(f'Index error. Expected {fullSize}, got {i}!')
 
     return img3Obj
 
 
-def tagExists(img3Obj: img3, magic: bytes) -> list[int]:
-    if not isinstance(img3Obj, img3):
-        raise TypeError(f'img3Obj must be of type: {img3}')
+def tagExistsAtIndex(img3Obj: img3, magic: bytes) -> list[int]:
+    if len(magic) != TAG_MAGIC_SIZE:
+        raise ValueError(f'Magic must be {TAG_MAGIC_SIZE} bytes!')
 
-    if not isinstance(magic, bytes):
-        raise TypeError(f'Magic must be of type: {bytes}')
-
-    if not isinstance(img3Obj.tags, list):
-        raise TypeError(f'Tags must be of type: {list}')
-
-    if len(magic) != 4:
-        raise ValueError('Magic must be 4 bytes!')
+    if magic not in TAGS:
+        raise ValueError(f'{magic.decode()} is not a valid tag!')
 
     matches = []
 
@@ -371,7 +185,9 @@ def tagExists(img3Obj: img3, magic: bytes) -> list[int]:
         return matches
 
     for i, tag in enumerate(img3Obj.tags):
-        if getTagMagic(tag) != magic:
+        tagMagicReversed = tag.magic[::-1]
+
+        if tagMagicReversed != magic:
             continue
 
         matches.append(i)
@@ -380,28 +196,18 @@ def tagExists(img3Obj: img3, magic: bytes) -> list[int]:
 
 
 def getTagWithMagic(img3Obj: img3, magic: bytes) -> list[img3tag]:
-    if not isinstance(img3Obj, img3):
-        raise TypeError(f'img3Obj must be of type: {img3}')
-
-    if not isinstance(img3Obj.tags, list):
-        raise TypeError(f'Tags must be of type: {list}')
-
-    if not img3Obj.tags:
-        raise ValueError('There are no tags!')
-
-    if not isinstance(magic, bytes):
-        raise TypeError
-
-    if len(magic) != 4:
-        raise ValueError('Magic must be 4 bytes!')
+    if len(magic) != TAG_MAGIC_SIZE:
+        raise ValueError(f'Magic must be {TAG_MAGIC_SIZE} bytes!')
 
     if magic not in TAGS:
-        raise ValueError(f'Unknown tag magic: {magic}!')
+        raise ValueError(f'Unknown tag magic: {magic.decode()}!')
 
-    tagIndexes = tagExists(img3Obj, magic)
-    tags = [] if not tagIndexes else [img3Obj.tags[i] for i in tagIndexes]
+    tagIndexes = tagExistsAtIndex(img3Obj, magic)
 
-    return tags
+    if not tagIndexes:
+        return tagIndexes
+
+    return [img3Obj.tags[i] for i in tagIndexes]
 
 
 def initKbag() -> kbag:
@@ -409,8 +215,8 @@ def initKbag() -> kbag:
 
 
 def parseKBAGHead(data: bytes) -> kbag:
-    if not isinstance(data, bytes):
-        raise TypeError(f'Data must be of type: {bytes}')
+    if len(data) < KBAG_HEAD_SIZE:
+        raise ValueError(f'Data must be at least {KBAG_HEAD_SIZE} bytes!')
 
     headData = getBufferAtIndex(data, 0, KBAG_HEAD_SIZE)
     cryptState, aesType = unpack('<2I', headData)
@@ -423,53 +229,30 @@ def parseKBAGHead(data: bytes) -> kbag:
 
 
 def parseKBAG(kbagTag: img3tag) -> kbag:
-    if not isinstance(kbagTag, img3tag):
-        raise TypeError(f'kbagTag must be of type: {img3tag}')
-
     kbagObj = parseKBAGHead(kbagTag.data)
 
-    if not isinstance(kbagObj.cryptState, int):
-        raise TypeError(f'cryptState must be of type: {int}')
-
-    if not isinstance(kbagObj.aesType, int):
-        raise TypeError(f'aesType must be of type: {int}')
-
-    if not isinstance(kbagObj.iv, bytes):
-        raise TypeError(f'IV must be of type: {bytes}')
-
-    if not isinstance(kbagObj.key, bytes):
-        raise TypeError(f'Key must be of type: {bytes}')
-
-    if kbagObj.cryptState not in (KBAG_CRYPT_STATE_PRODUCTION, KBAG_CRYPT_STATE_DEVELOPMENT):
+    if kbagObj.cryptState not in KBAG_CRYPT_STATES:
         raise ValueError(f'Unknown cryptState: {kbagObj.cryptState}!')
 
     if kbagObj.aesType not in AES_SIZES:
         raise ValueError(f'Unknown AES: {kbagObj.aesType}!')
 
-    kbagHeadSize = 8
-    ivSize = 16
-    keySize = AES_SIZES[kbagObj.aesType]
+    keySize = AES_SIZES.get(kbagObj.aesType)
 
-    kbagObj.iv = getBufferAtIndex(kbagTag.data, kbagHeadSize, ivSize)
-    kbagObj.key = getBufferAtIndex(kbagTag.data, kbagHeadSize + ivSize, keySize)
+    if keySize is None:
+        raise ValueError(f'Unknown AES key size: {keySize}')
+
+    kbagObj.iv = getBufferAtIndex(kbagTag.data, KBAG_HEAD_SIZE, AES_BLOCK_SIZE)
+    kbagObj.key = getBufferAtIndex(kbagTag.data, KBAG_HEAD_SIZE + AES_BLOCK_SIZE, keySize)
 
     return kbagObj
 
 
 def printKBAG(kbagTag: img3tag) -> None:
-    if not isinstance(kbagTag, img3tag):
-        raise TypeError(f'kbagTag must be of type: {img3tag}')
-
     kbagObj = parseKBAG(kbagTag)
-    cryptState = None
+    cryptState = KBAG_CRYPT_STATES.get(kbagObj.cryptState)
 
-    if kbagObj.cryptState == KBAG_CRYPT_STATE_PRODUCTION:
-        cryptState = 'Production'
-
-    elif kbagObj.cryptState == KBAG_CRYPT_STATE_DEVELOPMENT:
-        cryptState = 'Development'
-
-    else:
+    if cryptState is None:
         raise ValueError(f'Unknown cryptState: {kbagObj.cryptState}')
 
     print(f'CryptState: {cryptState}')
@@ -478,28 +261,19 @@ def printKBAG(kbagTag: img3tag) -> None:
     print(f'Key: {hexlify(kbagObj.key).decode()}')
 
 
-def makeTag(magic: bytes, data: bytes | None) -> img3tag:
-    if not isinstance(magic, bytes):
-        raise TypeError(f'Magic must be of type: {bytes}')
-
-    if not isinstance(data, bytes):
-        raise TypeError(f'Data must be of type: {bytes}')
-
-    if len(magic) != 4:
-        raise ValueError('Magic must be 4 bytes!')
-
-    if not data:
-        raise ValueError('No data to read!')
+def makeTag(magic: bytes, data: bytes) -> img3tag:
+    if len(magic) != TAG_MAGIC_SIZE:
+        raise ValueError(f'Magic must be {TAG_MAGIC_SIZE} bytes!')
 
     if magic not in TAGS:
         raise ValueError(f'Unknown tag magic: {magic.decode()}')
 
     dataSize = len(data)
 
-    paddedData = pad(4, bytearray(data))
+    align = 4 if magic != b'DATA' else 16
+    paddedData = appendPaddingToData(align, data)
     paddedDataSize = len(paddedData)
     paddingSize = paddedDataSize - dataSize
-    paddedData = bytes(paddedData)
 
     tag = initImg3Tag()
     tag.magic = magic[::-1]
@@ -513,26 +287,21 @@ def makeTag(magic: bytes, data: bytes | None) -> img3tag:
     return tag
 
 
-def dataTagPaddingIsZeroed(tag: img3tag) -> bool:
-    if not isinstance(tag, img3tag):
-        raise TypeError(f'Tag must be of type: {img3tag}')
+def isDataTagPaddingZeroed(dataTag: img3tag) -> bool:
+    if dataTag.magic[::-1] != b'DATA':
+        raise ValueError('Tag must be of type: DATA!')
 
-    if getTagMagic(tag) != b'DATA':
-        raise ValueError('Incorrect tag type!')
+    padSize = getTagPaddingSize(dataTag)
+    zeroedPadding = initPadding(padSize)
+    isPaddingZeroed = dataTag.padding == zeroedPadding
 
-    padSize = len(tag.padding)
-    zeroedPadding = b'\x00' * padSize
-    return tag.padding == zeroedPadding
+    return isPaddingZeroed
 
 
-def img3Decrypt(dataTag: img3tag, aes: int, iv: bytes | None, key: bytes | None) -> tuple[img3tag, bool]:
-    if not isinstance(dataTag, img3tag):
-        raise TypeError(f'dataTag must be of type: {img3tag}')
+def img3Decrypt(dataTag: img3tag, aes: int | None, iv: bytes | None, key: bytes | None) -> tuple[img3tag, bool]:
+    dataTagMagic = b'DATA'
 
-    if not isinstance(aes, int):
-        raise TypeError(f'AES must be of type: {int}')
-
-    if getTagMagic(dataTag) != b'DATA':
+    if dataTag.magic[::-1] != dataTagMagic:
         raise ValueError('Tag must be of type: DATA!')
 
     block1Size = dataTag.dataSize & ~0xF
@@ -542,76 +311,53 @@ def img3Decrypt(dataTag: img3tag, aes: int, iv: bytes | None, key: bytes | None)
     block2Data = getBufferAtIndex(dataTag.data, block1Size, block2Size) if block2Size >= 1 else b''
 
     decryptBuffer = block1Data
-    paddingIsZeroed = dataTagPaddingIsZeroed(dataTag)
+    isPaddingZeroed = isDataTagPaddingZeroed(dataTag)
 
-    if not paddingIsZeroed:
+    if not isPaddingZeroed:
+        # Padding isn't zeroed, which means it's included during decryption
         decryptBuffer += block2Data + dataTag.padding
 
-    if not isAligned(len(decryptBuffer), 16):
-        raise ValueError('Decrypt buffer is not 16 byte aligned!')
-
-    if iv and key:
+    if aes is not None and iv and key:
+        # Image is likely a non-iOS 10 image
         decryptBuffer = doAES(False, aes, decryptBuffer, iv, key)
 
-    if paddingIsZeroed:
+    if isPaddingZeroed:
+        # Padding is zeroed, only block1Size was encrypted
         decryptBuffer += block2Data
     else:
+        # Padding wasn't zeroed, which means we have to remove decrypted padding
         decryptBuffer = getBufferAtIndex(decryptBuffer, 0, dataTag.dataSize)
 
-    newDataTag = makeTag(b'DATA', decryptBuffer)
-    return newDataTag, paddingIsZeroed
+    newDataTag = makeTag(dataTagMagic, decryptBuffer)
+    return newDataTag, isPaddingZeroed
 
 
 def handleKernelData(dataTag: img3tag, kASLRSupported: bool = False) -> img3tag:
-    if not isinstance(dataTag, img3tag):
-        raise TypeError(f'dataTag must be of type: {img3tag}')
+    KERNEL_COMPRESS_MODE = {
+        MACHO_MAGIC: partial(compress, kASLRSupported=kASLRSupported),
+        LZSS_SIGNATURE: decompress
+    }
 
-    if not isinstance(kASLRSupported, bool):
-        raise TypeError(f'kASLRSupported must be of type: {bool}')
+    magic = getBufferAtIndex(dataTag.data, 0, 4)
 
-    COMPRESSED_DATA_MAGIC = b'comp'
-    UNCOMPRESSED_DATA_MAGIC = b'\xfe\xed\xfa\xce'[::-1]
+    if magic not in KERNEL_COMPRESS_MODE:
+        raise ValueError(f'Unknown kernel magic: {magic.decode()}')
 
-    buffer = getBufferAtIndex(dataTag.data, 0, 4)
-    mode = None
+    mode = KERNEL_COMPRESS_MODE.get(magic)
 
-    if buffer == COMPRESSED_DATA_MAGIC:
-        mode = 'decompress'
+    if mode is None:
+        raise ValueError('Cannot determine compress mode!')
 
-    elif buffer == UNCOMPRESSED_DATA_MAGIC:
-        mode = 'compress'
-
-    else:
-        raise ValueError('Unable to determine mode!')
-
-    if not isinstance(mode, str):
-        raise TypeError(f'Mode must be of type: {str}')
-
-    if mode not in ('compress', 'decompress'):
-        raise ValueError(f'Unknown mode: {mode}')
-
-    newData = None
-
-    if mode == 'compress':
-        newData = compress(dataTag.data, kASLRSupported)
-    else:
-        newData = decompress(dataTag.data)
-
+    newData = mode(dataTag.data)
     newDataTag = makeTag(b'DATA', newData)
+
     return newDataTag
 
 
-def img3Encrypt(dataTag: img3tag, aes: int, iv: bytes | None, key: bytes | None, paddingWasZeroed: bool = False) -> img3tag:
-    if not isinstance(dataTag, img3tag):
-        raise TypeError(f'dataTag must be of type: {img3tag}')
+def img3Encrypt(dataTag: img3tag, aes: int | None, iv: bytes | None, key: bytes | None, paddingWasZeroed: bool = False) -> img3tag:
+    dataTagMagic = b'DATA'
 
-    if not isinstance(aes, int):
-        raise TypeError(f'AES must be of type: {int}')
-
-    if not isinstance(paddingWasZeroed, bool):
-        raise TypeError(f'paddingWasZeroed must be of type: {bool}')
-
-    if getTagMagic(dataTag) != b'DATA':
+    if dataTag.magic[::-1] != dataTagMagic:
         raise ValueError('Tag must be of type: DATA!')
 
     block1Size = dataTag.dataSize & ~0xF
@@ -621,17 +367,12 @@ def img3Encrypt(dataTag: img3tag, aes: int, iv: bytes | None, key: bytes | None,
     encryptBuffer = block1Data
 
     if not paddingWasZeroed:
-        encryptBuffer = block2Data + dataTag.padding
+        encryptBuffer += block2Data + dataTag.padding
 
     # Ensure we pad the encrypt buffer
-    encryptBuffer = pad(16, bytearray(encryptBuffer))
+    encryptBuffer = appendPaddingToData(AES_BLOCK_SIZE, encryptBuffer)
 
-    if not isAligned(len(encryptBuffer), 16):
-        raise ValueError('Encrypt buffer is not 16 byte aligned!')
-
-    encryptBuffer = bytes(encryptBuffer)
-
-    if iv and key:
+    if aes is not None and iv and key:
         encryptBuffer = doAES(True, aes, encryptBuffer, iv, key)
 
     padding = b''
@@ -646,7 +387,7 @@ def img3Encrypt(dataTag: img3tag, aes: int, iv: bytes | None, key: bytes | None,
             padding = getBufferAtIndex(encryptBuffer, encryptBufferSize - paddingSize, paddingSize)
             encryptBuffer = getBufferAtIndex(encryptBuffer, 0, encryptBufferSize - paddingSize)
 
-    newDataTag = makeTag(b'DATA', encryptBuffer)
+    newDataTag = makeTag(dataTagMagic, encryptBuffer)
 
     if padding:
         if len(newDataTag.padding) != len(padding):
@@ -658,16 +399,18 @@ def img3Encrypt(dataTag: img3tag, aes: int, iv: bytes | None, key: bytes | None,
 
 
 def updateImg3Head(img3Obj: img3) -> img3:
-    if not isinstance(img3Obj, img3):
-        raise TypeError(f'img3Obj must be of type: {img3}')
-
     i = 0
     sigCheckArea = 0
 
     for tag in img3Obj.tags:
         i += tag.totalSize
 
-        if getTagMagic(tag) in (b'SHSH', b'CERT'):
+        # TODO: This will include anything after these two.
+        # This means anything at the end will be include in
+        # the size calculations. I've only ever seen objects
+        # where SHSH and CERT are at the end. Check this!
+
+        if tag.magic[::-1] in (b'SHSH', b'CERT'):
             continue
 
         sigCheckArea += tag.totalSize
@@ -680,16 +423,10 @@ def updateImg3Head(img3Obj: img3) -> img3:
 
 
 def replaceTagInImg3Obj(img3Obj: img3, newTag: img3tag) -> img3:
-    if not isinstance(img3Obj, img3):
-        raise TypeError(f'img3Obj must be of type: {img3}')
-
-    if not isinstance(newTag, img3tag):
-        raise TypeError(f'newTag must be of type: {img3tag}')
-
     tags = img3Obj.tags.copy()
 
     for i, tag in enumerate(img3Obj.tags):
-        if getTagMagic(tag) != getTagMagic(newTag):
+        if tag.magic != newTag.magic:
             continue
 
         tags[i] = newTag
@@ -700,30 +437,16 @@ def replaceTagInImg3Obj(img3Obj: img3, newTag: img3tag) -> img3:
 
 
 def img3ToBytes(img3Obj: img3) -> bytes:
-    if not isinstance(img3Obj, img3):
-        raise TypeError(f'img3Obj must be of type: {img3}')
-
-    img3HeadData = pack('<4s3I4s',
-        img3Obj.magic,
-        img3Obj.fullSize,
-        img3Obj.sizeNoPack,
-        img3Obj.sigCheckArea,
-        img3Obj.ident
-    )
-
-    if not isinstance(img3Obj.tags, list):
-        raise TypeError(f'Tags must be of type: {list}')
-
-    if not img3Obj.tags:
-        raise ValueError('img3 does not have any tags!')
-
+    img3HeadData = pack('<4s3I4s', img3Obj.magic, img3Obj.fullSize, img3Obj.sizeNoPack, img3Obj.sigCheckArea, img3Obj.ident)
     tagsData = b''
 
-    for tag in img3Obj.tags:
-        tagsData += pack('<4s2I', tag.magic, tag.totalSize, tag.dataSize) + tag.data + tag.padding
+    if img3Obj.tags:
+        for tag in img3Obj.tags:
+            tagsData += pack('<4s2I', tag.magic, tag.totalSize, tag.dataSize) + tag.data + tag.padding
 
     img3Data = img3HeadData + tagsData
 
+    # TODO Make sure img3's with no tags are valid here
     if len(img3Data) != img3Obj.fullSize:
         raise ValueError(f'Img3 buffer is not of size: {img3Obj.fullSize}!')
 
@@ -731,112 +454,112 @@ def img3ToBytes(img3Obj: img3) -> bytes:
 
 
 def findDifferencesBetweenTwoImg3s(img3Obj1: img3, img3Obj2: img3):
-    if not isinstance(img3Obj1, img3):
-        raise TypeError(f'img3Obj1 must be of type: {img3}')
+    if img3Obj1.magic != img3Obj2.magic:
+        print(f'Magic: {img3Obj1.magic.decode()}, {img3Obj2.magic.decode()}')
 
-    if not isinstance(img3Obj2, img3):
-        raise TypeError(f'img3Obj2 must be of type: {img3}')
+    if img3Obj1.fullSize != img3Obj2.fullSize:
+        print(f'Fullsize: {img3Obj1.fullSize}, {img3Obj2.fullSize}')
 
-    if getImg3Magic(img3Obj1) != getImg3Magic(img3Obj2):
-        print(f'Magic: {getImg3Magic(img3Obj1)}, {getImg3Magic(img3Obj2)}')
+    if img3Obj1.sizeNoPack != img3Obj2.sizeNoPack:
+        print(f'SizeNoPack: {img3Obj1.sizeNoPack}, {img3Obj2.sizeNoPack}')
 
-    if getImg3FullSize(img3Obj1) != getImg3FullSize(img3Obj2):
-        print(f'Fullsize: {getImg3FullSize(img3Obj1)}, {getImg3FullSize(img3Obj2)}')
+    if img3Obj1.sigCheckArea != img3Obj2.sigCheckArea:
+        print(f'SigCheckArea: {img3Obj1.sigCheckArea}, {img3Obj2.sigCheckArea}')
 
-    if getImg3SizeNoPack(img3Obj1) != getImg3SizeNoPack(img3Obj2):
-        print(f'SizeNoPack: {getImg3SizeNoPack(img3Obj1)}, {getImg3SizeNoPack(img3Obj2)}')
-
-    if getImg3SigCheckArea(img3Obj1) != getImg3SigCheckArea(img3Obj2):
-        print(f'SigCheckArea: {getImg3SigCheckArea(img3Obj1)}, {getImg3SigCheckArea(img3Obj2)}')
-
-    if getImg3Ident(img3Obj1) != getImg3Ident(img3Obj2):
-        print(f'Ident: {getImg3Ident(img3Obj1)}, {getImg3Ident(img3Obj2)}')
-
-    if not isinstance(img3Obj1.tags, list):
-        raise TypeError(f'Tags must be of type: {list}')
+    if img3Obj1.ident != img3Obj2.ident:
+        print(f'Ident: {img3Obj1.ident.decode()}, {img3Obj2.ident.decode()}')
 
     if not img3Obj1.tags:
         raise ValueError('Img3 1 does not have any tags!')
-
-    if not isinstance(img3Obj2.tags, list):
-        raise TypeError(f'Tags must be of type: {list}')
 
     if not img3Obj2.tags:
         raise ValueError('Img3 2 does not have any tags!')
 
     for tag1, tag2 in zip_longest(img3Obj1.tags, img3Obj2.tags):
-        if tag1 and tag2:
-            print(f'Magic: {getTagMagic(tag1)}, {getTagMagic(tag2)}')
-    
-            if getTagTotalSize(tag1) != getTagTotalSize(tag2):
-                print(f'Total size: {getTagTotalSize(tag1)}, {getTagTotalSize(tag2)}')
-
-            if getTagDataSize(tag1) != getTagDataSize(tag2):
-                print(f'Data size: {getTagDataSize(tag1)}, {getTagDataSize(tag2)}')
-
-            tag1PadSize = len(tag1.padding)
-            tag2PadSize = len(tag2.padding)
-
-            if tag1PadSize != tag2PadSize:
-                print(f'Padding size: {tag1PadSize}, {tag2PadSize}')
-
         if tag1 and tag2 is None:
-            print(f'Magic: {getTagMagic(tag1)}, {None}')
-            print(f'Total size: {getTagTotalSize(tag1)}, {None}')
-            print(f'Data size: {getTagDataSize(tag1)}, {None}')
-            print(f'Padding size: {getTagPadSize(tag1)}, {None}')
+            print(f'\tMagic: {tag1.magic.decode()}, {None}')
+            print(f'\tTotal size: {tag1.totalSize}, {None}')
+            print(f'\tData size: {tag1.dataSize}, {None}')
+            print(f'\tPadding size: {getTagPaddingSize(tag1)}, {None}')
+            continue
 
-        if tag1 is None and tag2:
-            print(f'Magic: {None}, {getTagMagic(tag2)}')
-            print(f'Total size: {None}, {getTagTotalSize(tag2)}')
-            print(f'Data size: {None}, {getTagDataSize(tag2)}')
-            print(f'Padding size: {None}, {getTagPadSize(tag2)}')
+        elif tag1 is None and tag2:
+            print(f'\tMagic: {None}, {tag2.magic.decode()}')
+            print(f'\tTotal size: {None}, {tag2.totalSize}')
+            print(f'\tData size: {None}, {tag2.dataSize}')
+            print(f'\tPadding size: {None}, {getTagPaddingSize(tag2)}')
+            continue
+
+        info = {
+            'Magic': (tag1.magic, tag2.magic),
+            'Total size': (tag1.totalSize, tag2.totalSize),
+            'Data size': (tag1.dataSize, tag2.dataSize),
+            'Padding Size': (getTagPaddingSize(tag1), getTagPaddingSize(tag2))
+        }
+
+        differences = []
+
+        for i, value in enumerate(info):
+            values = info.get(value)
+
+            if values is None:
+                raise ValueError(f'No value: {value}')
+
+            valuesDiffer = True if len(set(values)) > 1 else False
+
+            if not valuesDiffer:
+                continue
+
+            differences.append(value)
+
+        if not differences:
+            continue
+
+        print(f'Magic: {tag1.magic.decode()}')
+
+        for difference in differences:
+            values = info.get(difference)
+
+            if values is None:
+                raise ValueError(f'No value: {difference}')
+
+            value1, value2 = values
+
+            if difference == 'Magic':
+                value1 = value1.decode()
+                value2 = value2.decode()
+
+            print(f'\t{difference}: {value1}, {value2}')
 
 
 def printImg3Info(img3Obj: img3) -> None:
-    if not isinstance(img3Obj, img3):
-        raise TypeError(f'img3Obj must be of type: {img3}')
-
-    print(f'Magic: {getImg3Magic(img3Obj).decode()}')
-    print(f'Fullsize: {getImg3FullSize(img3Obj)}')
-    print(f'SizeNoPack: {getImg3SizeNoPack(img3Obj)}')
-    print(f'SigCheckArea: {getImg3SigCheckArea(img3Obj)}')
-    print(f'Ident: {getImg3Ident(img3Obj).decode()}')
+    print(f'Magic: {img3Obj.magic.decode()}')
+    print(f'Fullsize: {img3Obj.fullSize}')
+    print(f'SizeNoPack: {img3Obj.sizeNoPack}')
+    print(f'SigCheckArea: {img3Obj.sigCheckArea}')
+    print(f'Ident: {img3Obj.ident.decode()}')
 
     if img3Obj.tags:
-        if not isinstance(img3Obj.tags, list):
-            raise TypeError(f'Tags must be of type: {list}')
-
         for tag in img3Obj.tags:
-            print(f'Magic: {getTagMagic(tag).decode()}')
-            print(f'Totalsize: {getTagTotalSize(tag)}')
-            print(f'Datasize: {getTagDataSize(tag)}')
-            print(f'Padsize: {getTagPadSize(tag)}')
+            print(f'Magic: {tag.magic.decode()}')
+            print(f'Totalsize: {tag.totalSize}')
+            print(f'Datasize: {tag.dataSize}')
+            print(f'Padsize: {getTagPaddingSize(tag)}')
 
 
 def getTagOffsetInImg3(img3Obj: img3, magic: bytes) -> int:
-    if not isinstance(img3Obj, img3):
-        raise TypeError(f'img3Obj must be of type: {img3}')
+    if len(magic) != TAG_MAGIC_SIZE:
+        raise ValueError(f'Magic must be {TAG_MAGIC_SIZE} bytes!')
 
-    if not isinstance(magic, bytes):
-        raise TypeError(f'Magic must be of type: {bytes}')
-
-    if not isinstance(img3Obj.tags, list):
-        raise TypeError(f'Tags must be of type: {list}')
-
-    if not magic:
-        raise ValueError('No data to read!')
-
-    if not img3Obj.tags:
-        raise ValueError('No tags are present!')
-    
     if magic not in TAGS:
-        raise ValueError(f'Unknown magic: {magic}!')
+        raise ValueError(f'Unknown magic: {magic.decode()}!')
 
     i = IMG3_HEAD_SIZE
+    # FIXME: Return 0 if no tags. We will know that there aren't
+    # any tags if the at least the offset is <= IMG3_HEAD_SIZE
 
     for tag in img3Obj.tags:
-        if getTagMagic(tag) == magic:
+        if tag.magic == magic:
             break
 
         i += tag.totalSize
@@ -847,58 +570,43 @@ def getTagOffsetInImg3(img3Obj: img3, magic: bytes) -> int:
     return i
 
 
+def getImg3SHA1Buffer(img3Obj: img3) -> bytes:
+    img3Bytes = img3ToBytes(img3Obj)
+    # TODO Replace sigCheckArea + 8 with getTagOffsetInImg3(img3Obj, b'SHSH')
+    sha1Buffer = getBufferAtIndex(img3Bytes, 12, img3Obj.sigCheckArea + 8)
+    return sha1Buffer
+
+
+# TODO: Figure out why this seems to produce false values in certain objects during testing
 def verifySHSH(img3Obj: img3) -> bool | None:
-    if not isinstance(img3Obj, img3):
-        raise TypeError(f'img3Obj must be of type: {img3}')
-
-    if not isinstance(img3Obj.tags, list):
-        raise TypeError(f'Tags must be of type: {list}')
-
-    if not img3Obj.tags:
-        raise ValueError('No tags are present!')
-
     shshTag = getTagWithMagic(img3Obj, b'SHSH')
 
     if not shshTag:
-        return
+        return None
 
-    shshTag = shshTag[0]
-
-    if len(shshTag.data) != 128:
-        raise ValueError(f'SHSH data size mismatch. Got {len(shshTag.data)}, expected 128!')
+    if len(shshTag[0].data) != SHSH_KEY_SIZE:
+        raise ValueError(f'SHSH data size mismatch. Got {len(shshTag[0].data)}, expected {SHSH_KEY_SIZE}!')
 
     certTag = getTagWithMagic(img3Obj, b'CERT')
 
     if not certTag:
-        return
+        return None
 
-    certTag = certTag[0]
-    publicKey = extractPublicKeyFromDER(certTag.data)
-    img3Data = img3ToBytes(img3Obj)
-    img3SHA1Data = getBufferAtIndex(img3Data, 12, img3Obj.sigCheckArea + 8)
-    return doRSACheck(publicKey, shshTag.data, img3SHA1Data)
+    publicKey = extractPublicKeyFromDER(certTag[0].data)
+    img3SHA1Data = getImg3SHA1Buffer(img3Obj)
+    isSHA1HashValid = doRSACheck(publicKey, shshTag[0].data, img3SHA1Data)
+
+    return isSHA1HashValid
 
 
 def removeTagFromImg3(img3Obj: img3, magic: bytes, removeAll: bool = False) -> img3:
-    if not isinstance(img3Obj, img3):
-        raise TypeError(f'img3Obj must be of type: {img3}')
-
-    if not img3Obj.tags:
-        return img3Obj
-
-    if not isinstance(magic, bytes):
-        raise TypeError(f'Magic must be of type: {bytes}')
-
-    if len(magic) != 4:
-        raise ValueError('Magic must be 4 bytes!')
+    if len(magic) != TAG_MAGIC_SIZE:
+        raise ValueError(f'Magic must be {TAG_MAGIC_SIZE} bytes!')
 
     if magic not in TAGS:
-        raise ValueError(f'Unknown magic: {magic}!')
+        raise ValueError(f'Unknown magic: {magic.decode()}!')
 
-    if not isinstance(removeAll, bool):
-        raise TypeError
-
-    tagIndexes = tagExists(img3Obj, magic)
+    tagIndexes = tagExistsAtIndex(img3Obj, magic)
 
     if not tagIndexes:
         return img3Obj
@@ -919,21 +627,6 @@ def removeTagFromImg3(img3Obj: img3, magic: bytes, removeAll: bool = False) -> i
 
 
 def make24KPWNLLB(img3Obj: img3, isN72: bool, isN88: bool) -> img3:
-    if not isinstance(img3Obj, img3):
-        raise TypeError(f'img3Obj must be of type: {img3}')
-    
-    if not isinstance(img3Obj.tags, list):
-        raise TypeError(f'Tags must be of type: {list}')
-    
-    if not img3Obj.tags:
-        raise ValueError('This image does not have any tags!')
-
-    if not isinstance(isN72, bool):
-        raise TypeError(f'isN72 must be of type: {bool}')
-
-    if not isinstance(isN88, bool):
-        raise TypeError(f'isN88 must be of type: {bool}')
-
     if isN72 and isN88:
         raise ValueError('Both device conditions ARE set!')
 
@@ -949,43 +642,39 @@ def make24KPWNLLB(img3Obj: img3, isN72: bool, isN88: bool) -> img3:
     bootstrap = N72_BOOTSTRAP if isN72 else N88_BOOTSTRAP
     dwordIndex = N72_SHELLCODE_DWORD_INDEX if isN72 else N88_SHELLCODE_DWORD_INDEX
 
+    typeTagMagic = b'TYPE'
+
     if isN88:
-        typeTag = getTagWithMagic(img3Obj, b'TYPE')
+        typeTag = getTagWithMagic(img3Obj, typeTagMagic)
 
         if not typeTag:
             raise ValueError('This image does not contain a TYPE tag!')
 
-        typeTag = typeTag[0]
-        typeTag.padding = b'\x00' * len(typeTag.padding)
-
-        newImg3 = replaceTagInImg3Obj(img3Obj, typeTag)
+        typeTag[0].padding = initPadding(getTagPaddingSize(typeTag[0]))
+        newImg3 = replaceTagInImg3Obj(img3Obj, typeTag[0])
     else:
-        newImg3 = removeTagFromImg3(img3Obj, b'TYPE', True)
-
-    if not newImg3:
-        raise ValueError('New Img3 is empty!')
+        newImg3 = removeTagFromImg3(img3Obj, typeTagMagic, True)
 
     dataTag = getTagWithMagic(newImg3, b'DATA')
 
     if not dataTag:
         raise ValueError('This image does not contain a DATA tag!')
 
-    dataTag = dataTag[0]
-    dataTagDword = getBufferAtIndex(dataTag.data, 0, 4)
-    dataTag.data = dword + getBufferAtIndex(dataTag.data, 4, dataTag.dataSize - 4)
+    dataTagDword = getBufferAtIndex(dataTag[0].data, 0, 4)
+    dataTag[0].data = dword + getBufferAtIndex(dataTag[0].data, 4, dataTag[0].dataSize - 4)
 
     newImg3 = removeTagFromImg3(newImg3, b'KBAG', True)
 
-    certTag = getTagWithMagic(newImg3, b'CERT')
+    certTagMagic = b'CERT'
+    certTag = getTagWithMagic(newImg3, certTagMagic)
 
     if not certTag:
         raise ValueError('This image does not contain a CERT tag!')
 
-    certTag = certTag[0]
-    certTagData = certTag.data + certTag.padding
-    certTagDataStartPos = getTagOffsetInImg3(img3Obj, b'CERT') + TAG_HEAD_SIZE
+    certTagData = certTag[0].data + certTag[0].padding
+    certTagDataStartPos = getTagOffsetInImg3(img3Obj, certTagMagic) + TAG_HEAD_SIZE
     sizeToFill = kpwnSize - certTagDataStartPos
-    certTagDataPadded = pad(sizeToFill, bytearray(certTagData))
+    certTagDataPadded = bytearray(appendPaddingToData(sizeToFill, certTagData))
 
     shellcode = replaceBufferAtIndex(bytearray(shellcode), dataTagDword, dwordIndex, 4)
 
@@ -997,7 +686,7 @@ def make24KPWNLLB(img3Obj: img3, isN72: bool, isN88: bool) -> img3:
     bootstrapStart = bootstrapOffset - certTagDataStartPos
     certTagDataPadded = replaceBufferAtIndex(certTagDataPadded, bootstrap, bootstrapStart, bootstrapSize)
 
-    newCertTag = makeTag(b'CERT', bytes(certTagDataPadded))
+    newCertTag = makeTag(certTagMagic, bytes(certTagDataPadded))
     newImg3 = replaceTagInImg3Obj(newImg3, newCertTag)
 
     if img3Obj.fullSize != kpwnSize:
@@ -1006,41 +695,14 @@ def make24KPWNLLB(img3Obj: img3, isN72: bool, isN88: bool) -> img3:
     return newImg3
 
 
-def insertTagInImg3(img3Obj: img3, tag: img3tag) -> img3:
-    if not isinstance(img3Obj, img3):
-        raise TypeError(f'img3Obj must be of type: {img3}')
-
-    if not isinstance(img3Obj.tags, list):
-        raise TypeError(f'Tags must be of type: {list}')
-
-    if not img3Obj.tags:
-        raise ValueError('No tags are present!')
-
-    if not isinstance(tag, img3tag):
-        raise TypeError
-
+def appendTagInImg3(img3Obj: img3, tag: img3tag) -> img3:
     img3Obj.tags.append(tag)
     return updateImg3Head(img3Obj)
 
 
 def signImg3(img3Obj: img3, blobData: dict, manifestData: dict) -> img3:
-    if not isinstance(img3Obj, img3):
-        raise TypeError(f'img3Obj must be of type: {im3}')
-
-    if not isinstance(img3Obj.tags, list):
-        raise TypeError(f'Tags must be of type: {list}')
-
-    if not img3Obj.tags:
-        raise ValueError('No tags are present!')
-
-    if not isinstance(blobData, dict):
-        raise TypeError(f'blobData must be of type: {dict}')
-
     if not blobData:
         raise ValueError('Blob data is empty!')
-
-    if not isinstance(manifestData, dict):
-        raise TypeError(f'manifestData must be of type: {dict}')
 
     if not manifestData:
         raise ValueError('Manifest data is empty!')
@@ -1055,7 +717,7 @@ def signImg3(img3Obj: img3, blobData: dict, manifestData: dict) -> img3:
         if sha1Digest is None:
             continue
 
-        sha1Buffer = getBufferAtIndex(img3ToBytes(img3Obj), 12, img3Obj.sigCheckArea + 8)
+        sha1Buffer = getImg3SHA1Buffer(img3Obj)
         bufferSHA1 = SHA1.new(sha1Buffer)
 
         if sha1Digest != bufferSHA1.digest():
@@ -1067,7 +729,7 @@ def signImg3(img3Obj: img3, blobData: dict, manifestData: dict) -> img3:
 
     if img3SHA1 is None:
         raise ValueError('Unable to find digest!')
-    
+
     if imageName is None:
         raise ValueError('Image name is empty!')
 
@@ -1097,7 +759,7 @@ def signImg3(img3Obj: img3, blobData: dict, manifestData: dict) -> img3:
     newImg3 = removeTagFromImg3(img3Obj, b'ECID', True)
     newImg3 = removeTagFromImg3(img3Obj, b'SHSH', True)
     newImg3 = removeTagFromImg3(img3Obj, b'CERT', True)
- 
+
     i = 0
     tags = []
 
@@ -1111,19 +773,16 @@ def signImg3(img3Obj: img3, blobData: dict, manifestData: dict) -> img3:
         raise ValueError('Error occurred during tag reading!')
 
     for tag in tags:
-        newImg3 = insertTagInImg3(newImg3, tag)
+        newImg3 = appendTagInImg3(newImg3, tag)
 
     return newImg3
 
 
 def getNestedImageInCERT(certTag: img3tag) -> img3 | None:
-    if not isinstance(certTag, img3tag):
-        raise TypeError(f'Tag must be of type: {img3tag}')
+    magicReversed = certTag.magic[::-1]
 
-    magic = getTagMagic(certTag)
-
-    if magic != b'CERT':
-        raise ValueError(f'Incorrect tag magic! Got {magic}!')
+    if magicReversed != b'CERT':
+        raise ValueError(f'Incorrect tag magic! Got {magicReversed.decode()}!')
 
     if not certTag.data:
         raise ValueError('CERT data is empty!')
@@ -1135,33 +794,42 @@ def getNestedImageInCERT(certTag: img3tag) -> img3 | None:
     try:
         nestedImage = readImg3(nestedData)
     except ValueError:
-        return
-    else:
-        return nestedImage
+        pass
+
+    return nestedImage
 
 
-def decryptKBAG(kbagTag: img3tag, gidKey: bytes) -> kbag:
-    if not isinstance(kbagTag, img3tag):
-        raise TypeError(f'KBAG must be of type: {img3tag}')
-    
-    if not isinstance(gidKey, bytes):
-        raise TypeError(f'GIDKey must be of type: {bytes}')
+def decryptKBAG(kbagObj: kbag, gidKey: bytes) -> kbag:
+    if len(gidKey) != GID_KEY_SIZE:
+        raise ValueError(f'GIDKey must be {GID_KEY_SIZE} bytes!')
 
-    if not gidKey:
-        raise ValueError('GIDKey is empty!')
-
-    if len(gidKey) != 32:
-        raise ValueError('GIDKey must be 32 bytes!')
- 
-    kbagObj = parseKBAG(kbagTag)
     cryptBuffer = kbagObj.iv + kbagObj.key
+    decryptedBuffer = doAES(False, kbagObj.aesType, cryptBuffer, IV_DEFAULT_KEY, gidKey)
 
-    if not isAligned(len(cryptBuffer), 16):
-        raise ValueError('Crypt buffer is not a multiple of 16!')
+    keySize = AES_SIZES.get(kbagObj.aesType)
 
-    decryptedBuffer = doAES(False, kbagObj.aesType, cryptBuffer, b'\x00' * 16, gidKey)
+    if keySize is None:
+        raise ValueError(f'Unknown AES type: {kbagObj.aesType}')
 
-    kbagObj.iv = getBufferAtIndex(decryptedBuffer, 0, 16)
-    kbagObj.key = getBufferAtIndex(decryptedBuffer, 16, 32)
+    kbagObj.iv = getBufferAtIndex(decryptedBuffer, 0, AES_BLOCK_SIZE)
+    kbagObj.key = getBufferAtIndex(decryptedBuffer, AES_BLOCK_SIZE, keySize)
+
+    return kbagObj
+
+
+def encryptKBAG(kbagObj: kbag, gidKey: bytes) -> kbag:
+    if len(gidKey) != GID_KEY_SIZE:
+        raise ValueError(f'GIDKey must be {GID_KEY_SIZE} bytes!')
+
+    cryptBuffer = kbagObj.iv + kbagObj.key
+    encryptedBuffer = doAES(True, kbagObj.aesType, cryptBuffer, IV_DEFAULT_KEY, gidKey)
+
+    keySize = AES_SIZES.get(kbagObj.aesType)
+
+    if keySize is None:
+        raise ValueError(f'Unknown AES type: {kbagObj.aesType}')
+
+    kbagObj.iv = getBufferAtIndex(encryptedBuffer, 0, AES_BLOCK_SIZE)
+    kbagObj.key = getBufferAtIndex(encryptedBuffer, AES_BLOCK_SIZE, keySize)
 
     return kbagObj

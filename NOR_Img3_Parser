@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+
+from argparse import ArgumentParser
+from pathlib import Path
+
+from binpatch.utils import getBufferAtIndex
+
+from img3lib.img3 import IMG3_MAGIC, printImg3Info, readImg3
+
+
+def main() -> None:
+    parser = ArgumentParser()
+    parser.add_argument('-i', type=Path, required=True)
+    args = parser.parse_args()
+
+    inputData = args.i.read_bytes()
+    dataSize = len(inputData)
+    offset = 0
+    img3ObjCount = 0
+
+    while offset in range(dataSize):
+        magicOffset = inputData.find(IMG3_MAGIC[::-1], offset)
+
+        if magicOffset == -1:
+            break
+
+        dataBuffer = getBufferAtIndex(inputData, magicOffset, dataSize - magicOffset)
+
+        try:
+            img3Obj = readImg3(dataBuffer)
+        except ValueError:
+            offset = magicOffset + 1
+            continue
+
+        print(f'Found valid Img3 at: 0x{magicOffset:x}')
+        printImg3Info(img3Obj)
+
+        offset = magicOffset + img3Obj.fullSize
+        img3ObjCount += 1
+
+    print(f'Img3 objects found: {img3ObjCount}')
+
+
+if __name__ == '__main__':
+    main()

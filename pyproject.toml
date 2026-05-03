@@ -1,22 +1,20 @@
-[tool.poetry]
-name = "pyimg3lib"
-version = "1.2.5"
+[project]
+name = "img3lib"
+version = "1.2.6"
 description = "iOS Image3 lib"
-authors = ["Merculous <24739823+Merculous@users.noreply.github.com>"]
+authors = [
+    {name = "Merculous",email = "24739823+Merculous@users.noreply.github.com"}
+]
 readme = "README.md"
-packages = [{include = "img3lib"}]
-repository = "https://github.com/Merculous/PyImg3lib"
+requires-python = ">=3.12"
+dependencies = [
+    "pylzss @ git+https://github.com/m1stadev/pylzss.git",
+    "pycryptodome (>=3.23.0,<4.0.0)",
+    "asn1 (>=3.2.0,<4.0.0)",
+    "binpatch @ git+https://github.com/merculous/pybinpatch.git"
+]
 
-[tool.poetry.dependencies]
-python = "^3.11"
-pylzss = "^0.3.4"
-pycryptodome = "^3.19.0"
-asn1 = "^2.7.0"
-pybinpatch = "^1.1.1"
-
-[tool.poetry.group.dev.dependencies]
-lykos = {git = "https://github.com/m1stadev/lykos.git"}
 
 [build-system]
-requires = ["poetry-core"]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"

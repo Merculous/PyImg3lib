@@ -689,8 +689,8 @@ def make24KPWNLLB(img3Obj: img3, isN72: bool, isN88: bool) -> img3:
     newCertTag = makeTag(certTagMagic, bytes(certTagDataPadded))
     newImg3 = replaceTagInImg3Obj(newImg3, newCertTag)
 
-    if img3Obj.fullSize != kpwnSize:
-        raise ValueError(f'LLB is not of size: {kpwnSize}!')
+    if newImg3.fullSize != kpwnSize:
+        raise ValueError(f'LLB expected size: {kpwnSize}, got: {newImg3.fullSize}!')
 
     return newImg3
 
